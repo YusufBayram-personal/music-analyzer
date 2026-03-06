@@ -1,26 +1,40 @@
-/* ── Utility ──────────────────────────────────────────────────────────── */
-const $ = (sel, ctx = document) => ctx.querySelector(sel);
-const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
+/* ── Helpers ──────────────────────────────────────────────────────── */
+const $ = (s, ctx = document) => ctx.querySelector(s);
+const $$ = (s, ctx = document) => [...ctx.querySelectorAll(s)];
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const fmtNum = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : n;
 
-function showLoader(on) {
-  $('#loader').classList.toggle('show', on);
+function showLoader(on){ $('#loader').classList.toggle('show', on); }
+
+async function api(path){
+  const r = await fetch(path);
+  if(!r.ok) throw new Error(`${path} → ${r.status}`);
+  return r.json();
 }
 
-async function api(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`API ${path} failed: ${res.status}`);
-  return res.json();
+/* ── Animated counter ─────────────────────────────────────────────── */
+function animCount(el, target, duration = 700){
+  const start = Date.now();
+  const tick = () => {
+    const p = Math.min((Date.now()-start)/duration, 1);
+    const val = Math.round(p * p * target);   // ease-in quad
+    el.textContent = val;
+    if(p < 1) requestAnimationFrame(tick);
+  };
+  tick();
 }
 
-function fmtNum(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return n;
-}
+/* ── Chart defaults ───────────────────────────────────────────────── */
+Chart.defaults.color = '#6b6b8a';
+Chart.defaults.borderColor = 'rgba(255,255,255,.06)';
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
-/* ── Tab routing ──────────────────────────────────────────────────────── */
-const tabLoaded = {};
+const PALETTE = ['#1DB954','#1ed760','#169c41','#a8f0c0','#52d68a',
+                 '#8b5cf6','#3b82f6','#f59e0b','#ef4444','#ec4899',
+                 '#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6'];
 
+/* ── Tab routing ──────────────────────────────────────────────────── */
+const loaded = {};
 $$('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
@@ -28,362 +42,450 @@ $$('.tab').forEach(btn => {
     btn.classList.add('active');
     $$('.tab-content').forEach(s => s.classList.add('hidden'));
     $(`#tab-${tab}`).classList.remove('hidden');
-    if (!tabLoaded[tab]) { tabLoaded[tab] = true; loadTab(tab); }
+    if(!loaded[tab]){ loaded[tab]=true; loadTab(tab); }
   });
 });
 
-async function loadTab(tab) {
+async function loadTab(tab){
   showLoader(true);
   try {
-    switch (tab) {
-      case 'heatmap':    await loadHeatmap(); break;
-      case 'toptracks':  await loadTopTracks('short_term'); break;
-      case 'topartists': await loadTopArtists('short_term'); break;
-      case 'audio':      await loadAudioFeatures(); break;
-      case 'genres':     await loadGenres('short_term'); break;
+    switch(tab){
+      case 'personality': await loadPersonality(); break;
+      case 'heatmap':     await loadHeatmap(); break;
+      case 'toptracks':   await loadTopTracks('short_term'); break;
+      case 'topartists':  await loadTopArtists('short_term'); break;
+      case 'audio':       await loadAudio(); break;
+      case 'genres':      await loadGenres('short_term'); break;
+      case 'timeline':    await loadTimeline(); break;
     }
-  } catch (e) { console.error(e); }
+  } catch(e){ console.error(e); }
   showLoader(false);
 }
 
-/* ── Bootstrap Overview (always loads) ───────────────────────────────── */
-async function initDashboard() {
+/* ── Overview ─────────────────────────────────────────────────────── */
+async function initDashboard(){
   showLoader(true);
-  tabLoaded['overview'] = true;
+  loaded.overview = true;
   try {
-    const [profile, streak, recent, heatmapData, genres] = await Promise.all([
+    const [profile, streak, recent, heatmap, genres] = await Promise.all([
       api('/api/profile'),
       api('/api/listening_streak'),
-      api('/api/recent'),
+      api('/api/recent_timeline'),
       api('/api/weekly_heatmap'),
       api('/api/genre_breakdown'),
     ]);
 
     // Profile chip
-    const chip = $('#profile-chip');
-    chip.classList.remove('hidden');
+    $('#profile-chip').classList.remove('hidden');
     $('#username').textContent = profile.display_name || profile.id;
-    if (profile.images?.[0]) $('#avatar').src = profile.images[0].url;
+    if(profile.images?.[0]) $('#avatar').src = profile.images[0].url;
 
-    // Stats
-    $('#streak-val').textContent = streak.streak;
-    $('#days-val').textContent = streak.active_days;
-    $('#plays-val').textContent = streak.total_plays;
-    $('#top-genre-val').textContent = genres[0]?.genre || '—';
+    // Animated stats
+    animCount($('#streak-val'), streak.streak);
+    animCount($('#days-val'),   streak.active_days);
+    animCount($('#plays-val'),  streak.total_plays);
+    if(genres[0]){
+      $('#top-genre-val').textContent = genres[0].genre;
+      $('#top-genre-val').classList.add('small');
+    }
 
-    // Hourly chart (built from heatmap data aggregated by hour)
-    buildHourlyChart(heatmapData);
-
-    // Recent tracks
-    buildRecentList(recent.items?.slice(0, 10) || []);
-
-  } catch (e) { console.error(e); }
+    buildHourlyChart(heatmap);
+    buildRecentList(recent.slice(0, 10));
+  } catch(e){ console.error(e); }
   showLoader(false);
 }
 
-/* ── Hourly Activity Chart ────────────────────────────────────────────── */
-function buildHourlyChart(heatmapData) {
+/* ── Hourly chart ─────────────────────────────────────────────────── */
+function buildHourlyChart(heatmapData){
   const hours = Array(24).fill(0);
-  heatmapData.forEach(({ hour, count }) => { hours[hour] += count; });
-  const labels = hours.map((_, h) => h % 6 === 0 ? `${h}:00` : '');
-  const ctx = $('#hourly-chart').getContext('2d');
-  new Chart(ctx, {
+  heatmapData.forEach(({hour, count}) => hours[hour] += count);
+  const peak = Math.max(...hours);
+  new Chart($('#hourly-chart').getContext('2d'), {
     type: 'bar',
     data: {
-      labels: Array.from({ length: 24 }, (_, h) => `${h}:00`),
+      labels: Array.from({length:24}, (_,h) => `${h}:00`),
       datasets: [{
-        label: 'Plays',
         data: hours,
-        backgroundColor: hours.map(v => v > 0 ? 'rgba(29,185,84,0.7)' : 'rgba(29,185,84,0.15)'),
-        borderRadius: 4,
+        backgroundColor: hours.map(v => v === peak ? 'rgba(29,185,84,.9)' : 'rgba(29,185,84,.35)'),
+        borderRadius: 5,
         borderSkipped: false,
       }]
     },
     options: {
       responsive: true,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { title: t => `${t[0].label}` } }
-      },
+      plugins: { legend:{display:false}, tooltip:{callbacks:{title:t=>`${t[0].label}`}} },
       scales: {
-        x: {
-          ticks: { color: '#7a7a9a', font: { size: 10 }, maxRotation: 0,
-            callback(val, i) { return i % 6 === 0 ? this.getLabelForValue(i) : ''; }
-          },
-          grid: { color: 'rgba(255,255,255,.05)' }
-        },
-        y: { ticks: { color: '#7a7a9a', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.05)' } }
+        x: { ticks:{font:{size:9}, maxRotation:0, callback(v,i){ return i%6===0?this.getLabelForValue(i):''; }} },
+        y: { ticks:{font:{size:9}}, beginAtZero:true }
       }
     }
   });
 }
 
-/* ── Recent Track List ────────────────────────────────────────────────── */
-function buildRecentList(items) {
-  const ul = $('#recent-list');
-  ul.innerHTML = items.map((item, i) => {
-    const t = item.track;
-    const img = t.album?.images?.[0]?.url || '';
-    return `<li>
-      <span class="track-num">${i + 1}</span>
-      ${img ? `<img class="track-img" src="${img}" alt="" />` : '<div class="track-img"></div>'}
+/* ── Recent list ──────────────────────────────────────────────────── */
+function buildRecentList(items){
+  $('#recent-list').innerHTML = items.map((t,i) => `
+    <li>
+      <span class="track-num">${i+1}</span>
+      ${t.image?`<img class="track-img" src="${esc(t.image)}" alt="" loading="lazy"/>`:'<div class="track-img"></div>'}
       <div class="track-info">
         <div class="track-name">${esc(t.name)}</div>
-        <div class="track-artist">${esc(t.artists.map(a => a.name).join(', '))}</div>
+        <div class="track-artist">${esc(t.artist)}</div>
       </div>
-    </li>`;
-  }).join('');
+      <span class="track-time">${esc(t.time)}</span>
+    </li>`).join('');
 }
 
-/* ── Heatmap ──────────────────────────────────────────────────────────── */
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+/* ── Personality ──────────────────────────────────────────────────── */
+async function loadPersonality(){
+  const [p, decades] = await Promise.all([
+    api('/api/personality'),
+    api('/api/decade_breakdown'),
+  ]);
 
-async function loadHeatmap() {
+  $('#p-emoji').textContent = p.emoji || '🎵';
+  $('#p-type').textContent  = p.type  || '—';
+  $('#p-desc').textContent  = p.desc  || '';
+
+  const scoresEl = $('#p-scores');
+  scoresEl.innerHTML = Object.entries(p.scores||{}).map(([k,v]) => `
+    <div class="p-score">
+      <div class="p-score-val">${v}%</div>
+      <div class="p-score-label">${esc(k)}</div>
+    </div>`).join('');
+
+  buildDecadeChart('decade-chart', decades);
+
+  // Mood scatter for personality tab
+  const scatter = await api('/api/mood_scatter?time_range=short_term');
+  buildMoodChart('mood-chart', scatter);
+}
+
+/* ── Decade chart ─────────────────────────────────────────────────── */
+function buildDecadeChart(canvasId, decades){
+  const ctx = $(`#${canvasId}`).getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: decades.map(d => d.decade),
+      datasets: [{
+        label: 'Tracks',
+        data: decades.map(d => d.count),
+        backgroundColor: decades.map((_,i) => PALETTE[i % PALETTE.length] + '99'),
+        borderColor:     decades.map((_,i) => PALETTE[i % PALETTE.length]),
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend:{display:false} },
+      scales: {
+        x: { ticks:{font:{size:11}} },
+        y: { ticks:{font:{size:10}}, beginAtZero:true }
+      }
+    }
+  });
+}
+
+/* ── Mood scatter ─────────────────────────────────────────────────── */
+function buildMoodChart(canvasId, scatter){
+  const ctx = $(`#${canvasId}`);
+  if(!ctx) return;
+  const c = ctx.getContext('2d');
+
+  new Chart(c, {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'Tracks',
+        data: scatter.map(t => ({ x: t.valence, y: t.energy, label: t.name, artist: t.artist })),
+        backgroundColor: 'rgba(29,185,84,.55)',
+        borderColor:     'rgba(29,185,84,.9)',
+        borderWidth: 1,
+        pointRadius: 6,
+        pointHoverRadius: 9,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const d = ctx.raw;
+              return [`${d.label}`, `by ${d.artist}`, `Valence: ${Math.round(d.x*100)}% | Energy: ${Math.round(d.y*100)}%`];
+            }
+          }
+        }
+      },
+      scales: {
+        x: { min:0, max:1, title:{ display:true, text:'← Sad  ·  Valence  ·  Happy →', font:{size:11} }, ticks:{font:{size:9}} },
+        y: { min:0, max:1, title:{ display:true, text:'Energy', font:{size:11} }, ticks:{font:{size:9}} }
+      }
+    }
+  });
+}
+
+/* ── Heatmap ──────────────────────────────────────────────────────── */
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+async function loadHeatmap(){
   const data = await api('/api/weekly_heatmap');
 
-  // Build hour axis labels
-  const xLabels = $('#heatmap-x-labels');
-  xLabels.innerHTML = Array.from({ length: 24 }, (_, h) =>
-    `<span>${h % 6 === 0 ? h : ''}</span>`
-  ).join('');
+  // Hour labels
+  $('#heatmap-x-labels').innerHTML = Array.from({length:24},(_,h) =>
+    `<span>${h%6===0?h:''}</span>`).join('');
 
   const grid = $('#heatmap-grid');
   grid.innerHTML = '';
-
-  // Index data
   const map = {};
-  let maxCount = 1;
-  data.forEach(({ day, hour, count, tracks }) => {
-    map[`${day}-${hour}`] = { count, tracks };
-    if (count > maxCount) maxCount = count;
+  let maxC = 1;
+  data.forEach(({day,hour,count,tracks}) => {
+    map[`${day}-${hour}`] = {count,tracks};
+    if(count > maxC) maxC = count;
   });
 
-  const tooltip = $('#heatmap-tooltip');
+  const tip = $('#hm-tooltip');
 
-  for (let day = 0; day < 7; day++) {
-    for (let hour = 0; hour < 24; hour++) {
+  for(let day=0; day<7; day++){
+    for(let hour=0; hour<24; hour++){
       const entry = map[`${day}-${hour}`];
       const count = entry?.count || 0;
-      const ratio = count / maxCount;
-      const size = count > 0 ? Math.max(8, Math.round(ratio * 24)) : 4;
-      const opacity = count > 0 ? 0.15 + ratio * 0.85 : 0.08;
+      const ratio = count/maxC;
+      const size  = count>0 ? Math.max(8, Math.round(ratio*22)) : 4;
+      const op    = count>0 ? 0.2 + ratio*0.8 : 0.07;
 
       const cell = document.createElement('div');
       cell.className = 'hm-cell';
       const dot = document.createElement('div');
       dot.className = 'hm-dot';
-      dot.style.cssText = `width:${size}px;height:${size}px;opacity:${opacity.toFixed(2)};`;
+      dot.style.cssText = `width:${size}px;height:${size}px;opacity:${op.toFixed(2)};${count>0&&ratio>.6?`box-shadow:0 0 ${Math.round(ratio*12)}px rgba(29,185,84,.6);`:''}`;
       cell.appendChild(dot);
 
-      if (count > 0) {
+      if(count>0){
         cell.addEventListener('mousemove', e => {
-          tooltip.innerHTML = `<strong>${DAYS[day]} ${String(hour).padStart(2,'0')}:00</strong><br>${count} play${count > 1 ? 's' : ''}<br><em>${(entry.tracks || []).join(', ')}</em>`;
-          tooltip.classList.add('show');
-          tooltip.style.left = `${e.clientX + 12}px`;
-          tooltip.style.top = `${e.clientY + 12}px`;
+          tip.innerHTML = `<strong>${DAYS[day]} ${String(hour).padStart(2,'0')}:00</strong><br>${count} play${count>1?'s':''}<br><em style="color:#6b6b8a">${(entry.tracks||[]).join(', ')}</em>`;
+          tip.classList.add('show');
+          tip.style.left = `${e.clientX+14}px`;
+          tip.style.top  = `${e.clientY+14}px`;
         });
-        cell.addEventListener('mouseleave', () => tooltip.classList.remove('show'));
+        cell.addEventListener('mouseleave', () => tip.classList.remove('show'));
       }
-
       grid.appendChild(cell);
     }
   }
 }
 
-/* ── Top Tracks ───────────────────────────────────────────────────────── */
-async function loadTopTracks(range) {
-  const tracks = await api(`/api/top_tracks?time_range=${range}`);
-  const grid = $('#tracks-grid');
-  grid.innerHTML = tracks.map((t, i) => `
+/* ── Top Tracks ───────────────────────────────────────────────────── */
+let decadeTracksChart = null;
+
+async function loadTopTracks(range){
+  const [tracks, decades] = await Promise.all([
+    api(`/api/top_tracks?time_range=${range}`),
+    api(`/api/decade_breakdown?time_range=${range}`),
+  ]);
+
+  $('#tracks-grid').innerHTML = tracks.map((t,i) => `
     <div class="track-card">
-      ${t.image ? `<img src="${esc(t.image)}" alt="" loading="lazy"/>` : '<div style="aspect-ratio:1;background:var(--border);border-radius:8px;"></div>'}
-      <div class="card-rank">#${i + 1}</div>
-      <div class="card-title">${esc(t.name)}</div>
-      <div class="card-sub-text">${esc(t.artist)}</div>
-      <div class="popularity-bar"><div class="popularity-fill" style="width:${t.popularity}%"></div></div>
-    </div>
-  `).join('');
+      ${t.image?`<img src="${esc(t.image)}" alt="" loading="lazy"/>`:'<div style="aspect-ratio:1;background:var(--border);border-radius:8px"></div>'}
+      <div class="c-rank">#${i+1}</div>
+      <div class="c-title">${esc(t.name)}</div>
+      <div class="c-sub">${esc(t.artist)}</div>
+      <div class="pop-bar"><div class="pop-fill" style="width:${t.popularity}%"></div></div>
+    </div>`).join('');
+
+  if(decadeTracksChart){ decadeTracksChart.destroy(); decadeTracksChart=null; }
+  if(decades.length){
+    const ctx = $('#decade-chart-tracks').getContext('2d');
+    decadeTracksChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: decades.map(d=>d.decade),
+        datasets: [{ label:'Tracks', data: decades.map(d=>d.count),
+          backgroundColor: 'rgba(29,185,84,.4)', borderColor:'#1DB954',
+          borderWidth:1, borderRadius:5, borderSkipped:false }]
+      },
+      options: { responsive:true, plugins:{legend:{display:false}},
+        scales:{ x:{ticks:{font:{size:11}}}, y:{ticks:{font:{size:10}},beginAtZero:true} } }
+    });
+  }
 }
 
-// Time-range switcher for tracks
 $('#tab-toptracks').addEventListener('click', e => {
-  const btn = e.target.closest('.time-btn');
-  if (!btn) return;
-  $$('#tab-toptracks .time-btn').forEach(b => b.classList.remove('active'));
+  const btn = e.target.closest('.time-btn'); if(!btn) return;
+  $$('#tracks-time .time-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  showLoader(true);
-  loadTopTracks(btn.dataset.range).finally(() => showLoader(false));
+  showLoader(true); loadTopTracks(btn.dataset.range).finally(()=>showLoader(false));
 });
 
-/* ── Top Artists ──────────────────────────────────────────────────────── */
-async function loadTopArtists(range) {
+/* ── Top Artists ──────────────────────────────────────────────────── */
+async function loadTopArtists(range){
   const artists = await api(`/api/top_artists?time_range=${range}`);
-  const grid = $('#artists-grid');
-  grid.innerHTML = artists.map((a, i) => `
+  $('#artists-grid').innerHTML = artists.map((a,i) => `
     <div class="artist-card">
-      ${a.image ? `<img src="${esc(a.image)}" alt="" loading="lazy"/>` : '<div style="aspect-ratio:1;background:var(--border);border-radius:50%;"></div>'}
-      <div class="card-rank">#${i + 1}</div>
-      <div class="card-title">${esc(a.name)}</div>
-      <div class="genre-tags">${a.genres.map(g => `<span class="genre-tag">${esc(g)}</span>`).join('')}</div>
-      <div class="followers">${fmtNum(a.followers)} followers</div>
-      <div class="popularity-bar"><div class="popularity-fill" style="width:${a.popularity}%"></div></div>
-    </div>
-  `).join('');
+      ${a.image?`<img src="${esc(a.image)}" alt="" loading="lazy"/>`:'<div style="aspect-ratio:1;background:var(--border);border-radius:50%"></div>'}
+      <div class="c-rank">#${i+1}</div>
+      <div class="c-title">${esc(a.name)}</div>
+      <div class="genre-tags">${a.genres.map(g=>`<span class="genre-tag">${esc(g)}</span>`).join('')}</div>
+      <div class="c-followers">${fmtNum(a.followers)} followers</div>
+      <div class="pop-bar"><div class="pop-fill" style="width:${a.popularity}%"></div></div>
+    </div>`).join('');
 }
 
 $('#tab-topartists').addEventListener('click', e => {
-  const btn = e.target.closest('.time-btn');
-  if (!btn) return;
-  $$('#tab-topartists .time-btn').forEach(b => b.classList.remove('active'));
+  const btn = e.target.closest('.time-btn'); if(!btn) return;
+  $$('#artists-time .time-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  showLoader(true);
-  loadTopArtists(btn.dataset.range).finally(() => showLoader(false));
+  showLoader(true); loadTopArtists(btn.dataset.range).finally(()=>showLoader(false));
 });
 
-/* ── Audio Features ───────────────────────────────────────────────────── */
-const FEATURE_META = {
-  danceability:     { label: 'Danceability',     desc: 'How suitable for dancing' },
-  energy:           { label: 'Energy',           desc: 'Intensity and activity level' },
-  valence:          { label: 'Valence',          desc: 'Musical positiveness / happiness' },
-  acousticness:     { label: 'Acousticness',     desc: 'Confidence it\'s acoustic' },
-  instrumentalness: { label: 'Instrumentalness', desc: 'Predicts no vocal content' },
-  liveness:         { label: 'Liveness',         desc: 'Presence of a live audience' },
-  speechiness:      { label: 'Speechiness',      desc: 'Presence of spoken words' },
+/* ── Audio DNA ────────────────────────────────────────────────────── */
+const FEAT_META = {
+  danceability:     { label:'Danceability',     desc:'How suitable for dancing' },
+  energy:           { label:'Energy',           desc:'Intensity and activity level' },
+  valence:          { label:'Valence',          desc:'Musical positiveness' },
+  acousticness:     { label:'Acousticness',     desc:'Confidence it\'s acoustic' },
+  instrumentalness: { label:'Instrumentalness', desc:'Predicts no vocal content' },
+  liveness:         { label:'Liveness',         desc:'Presence of live audience' },
+  speechiness:      { label:'Speechiness',      desc:'Presence of spoken words' },
 };
 
-let radarChart = null;
+let radarChart = null, moodAudioChart = null;
 
-async function loadAudioFeatures() {
-  const feat = await api('/api/audio_features');
-  if (!feat || Object.keys(feat).length === 0) {
-    $('#tab-audio').innerHTML += '<p style="color:var(--text-dim);padding:24px;">Not enough data to compute audio features.</p>';
-    return;
-  }
+async function loadAudio(){
+  const [feat, scatter] = await Promise.all([
+    api('/api/audio_features'),
+    api('/api/mood_scatter?time_range=short_term'),
+  ]);
 
-  const keys = Object.keys(FEATURE_META);
-  const values = keys.map(k => feat[k] || 0);
+  if(!feat || !Object.keys(feat).length) return;
+
+  const keys   = Object.keys(FEAT_META);
+  const values = keys.map(k => feat[k]||0);
 
   // Radar
-  const ctx = $('#radar-chart').getContext('2d');
-  if (radarChart) radarChart.destroy();
-  radarChart = new Chart(ctx, {
+  if(radarChart) radarChart.destroy();
+  radarChart = new Chart($('#radar-chart').getContext('2d'), {
     type: 'radar',
     data: {
-      labels: keys.map(k => FEATURE_META[k].label),
+      labels: keys.map(k=>FEAT_META[k].label),
       datasets: [{
         label: 'Your Profile',
         data: values,
-        backgroundColor: 'rgba(29,185,84,0.15)',
+        backgroundColor: 'rgba(29,185,84,.15)',
         borderColor: '#1DB954',
         pointBackgroundColor: '#1DB954',
-        pointBorderColor: '#0a0a0f',
-        pointRadius: 4,
+        pointBorderColor: '#080810',
+        pointRadius: 5,
         borderWidth: 2,
       }]
     },
     options: {
       responsive: true,
-      scales: {
-        r: {
-          min: 0, max: 1,
-          ticks: { display: false },
-          grid: { color: 'rgba(255,255,255,.1)' },
-          angleLines: { color: 'rgba(255,255,255,.1)' },
-          pointLabels: { color: '#e8e8f0', font: { size: 12, weight: '600' } }
-        }
-      },
-      plugins: { legend: { display: false } }
+      scales: { r: {
+        min:0, max:1,
+        ticks:{display:false},
+        grid:{color:'rgba(255,255,255,.08)'},
+        angleLines:{color:'rgba(255,255,255,.08)'},
+        pointLabels:{color:'#eeeef5', font:{size:12,weight:'600'}}
+      }},
+      plugins:{legend:{display:false}}
     }
   });
 
   // Feature bars
-  const barsEl = $('#feature-bars');
-  barsEl.innerHTML = keys.map(k => {
-    const val = feat[k] || 0;
-    const pct = Math.round(val * 100);
-    return `
-      <div class="feature-row">
-        <div class="feature-label-row">
-          <span class="feature-name">${FEATURE_META[k].label}</span>
-          <span class="feature-val">${pct}%</span>
-        </div>
-        <div class="feature-bar-bg">
-          <div class="feature-bar-fill" style="width:${pct}%"></div>
-        </div>
-        <div class="feature-desc">${FEATURE_META[k].desc}</div>
-      </div>`;
-  }).join('');
+  $('#feature-bars').innerHTML = keys.map(k => {
+    const pct = Math.round((feat[k]||0)*100);
+    return `<div class="feat-row">
+      <div class="feat-label-row">
+        <span class="feat-name">${FEAT_META[k].label}</span>
+        <span class="feat-val">${pct}%</span>
+      </div>
+      <div class="feat-bg"><div class="feat-fill" style="width:${pct}%"></div></div>
+      <div class="feat-desc">${FEAT_META[k].desc}</div>
+    </div>`;
+  }).join('') + (feat.tempo ? `<div class="tempo-chip">Avg Tempo <strong style="color:var(--accent)">${feat.tempo} BPM</strong></div>` : '');
 
-  // Tempo note
-  if (feat.tempo) {
-    barsEl.insertAdjacentHTML('beforeend', `
-      <div style="margin-top:12px;padding:12px;background:var(--surface2);border-radius:10px;font-size:12px;">
-        Avg Tempo: <strong style="color:var(--accent)">${feat.tempo} BPM</strong>
-      </div>`);
-  }
+  // Mood scatter
+  if(moodAudioChart) moodAudioChart.destroy();
+  moodAudioChart = null;
+  buildMoodChart('mood-chart-audio', scatter);
 }
 
-/* ── Genres ───────────────────────────────────────────────────────────── */
+/* ── Genres ───────────────────────────────────────────────────────── */
 let genreChart = null;
 
-async function loadGenres(range = 'short_term') {
+async function loadGenres(range){
   const genres = await api(`/api/genre_breakdown?time_range=${range}`);
-  if (!genres.length) return;
+  if(!genres.length) return;
 
-  const top = genres.slice(0, 10);
-  const maxCount = top[0].count;
+  const top    = genres.slice(0,12);
+  const maxC   = top[0].count;
 
-  // Doughnut chart
-  const ctx = $('#genre-chart').getContext('2d');
-  const PALETTE = ['#1DB954','#1ed760','#169c41','#0d6e2e','#a8f0c0','#52d68a',
-                   '#2af598','#009efd','#5b34d4','#f7971e'];
-  if (genreChart) genreChart.destroy();
-  genreChart = new Chart(ctx, {
+  if(genreChart) genreChart.destroy();
+  genreChart = new Chart($('#genre-chart').getContext('2d'), {
     type: 'doughnut',
     data: {
-      labels: top.map(g => g.genre),
+      labels: top.map(g=>g.genre),
       datasets: [{
-        data: top.map(g => g.count),
+        data: top.map(g=>g.count),
         backgroundColor: PALETTE,
-        borderColor: '#12121a',
+        borderColor: '#0e0e1a',
         borderWidth: 3,
-        hoverOffset: 8,
+        hoverOffset: 10,
       }]
     },
     options: {
       responsive: true,
-      cutout: '60%',
+      cutout: '58%',
       plugins: {
-        legend: {
-          position: 'bottom',
-          labels: { color: '#e8e8f0', font: { size: 11 }, padding: 14, boxWidth: 12 }
-        }
+        legend: { position:'bottom', labels:{color:'#eeeef5', font:{size:11}, padding:14, boxWidth:12} }
       }
     }
   });
 
-  // Genre list
-  const listEl = $('#genre-list');
-  listEl.innerHTML = genres.map((g, i) => `
-    <div class="genre-row">
-      <span class="genre-rank">${i + 1}</span>
-      <span class="genre-name">${esc(g.genre)}</span>
-      <div class="genre-count-bar">
-        <div class="genre-count-fill" style="width:${Math.round((g.count / maxCount) * 100)}%"></div>
+  $('#genre-list').innerHTML = genres.map((g,i) => `
+    <div class="g-row">
+      <span class="g-rank">${i+1}</span>
+      <span class="g-name">${esc(g.genre)}</span>
+      <div class="g-bar-bg"><div class="g-bar-fill" style="width:${Math.round(g.count/maxC*100)}%"></div></div>
+      <span class="g-count">${g.count}</span>
+    </div>`).join('');
+}
+
+$('#tab-genres').addEventListener('click', e => {
+  const btn = e.target.closest('.time-btn'); if(!btn) return;
+  $$('#genres-time .time-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  showLoader(true); loadGenres(btn.dataset.range).finally(()=>showLoader(false));
+});
+
+/* ── Timeline ─────────────────────────────────────────────────────── */
+async function loadTimeline(){
+  const items = await api('/api/recent_timeline');
+  const tl = $('#timeline');
+  let lastDate = null;
+  tl.innerHTML = items.map(item => {
+    let dayHeader = '';
+    const dateLabel = `${item.weekday}, ${item.date}`;
+    if(dateLabel !== lastDate){
+      lastDate = dateLabel;
+      dayHeader = `<div class="tl-day">${esc(dateLabel)}</div>`;
+    }
+    return `${dayHeader}<div class="tl-item">
+      <span class="tl-time">${esc(item.time)}</span>
+      <div class="tl-dot"></div>
+      ${item.image?`<img class="tl-img" src="${esc(item.image)}" alt="" loading="lazy"/>`:'<div class="tl-img"></div>'}
+      <div class="tl-info">
+        <div class="tl-name">${esc(item.name)}</div>
+        <div class="tl-artist">${esc(item.artist)}</div>
       </div>
-      <span class="genre-count-label">${g.count}</span>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
-/* ── XSS-safe escape ─────────────────────────────────────────────────── */
-function esc(str = '') {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/* ── Init ────────────────────────────────────────────────────────────── */
+/* ── Init ─────────────────────────────────────────────────────────── */
 initDashboard();

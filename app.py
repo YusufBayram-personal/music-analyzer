@@ -269,6 +269,129 @@ def api_listening_streak():
     })
 
 
+@app.route("/api/mood_scatter")
+def api_mood_scatter():
+    """Returns valence + energy per track for mood quadrant scatter plot."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    term = request.args.get("time_range", "short_term")
+    top  = spotify_get("/me/top/tracks", token, params={"limit": 50, "time_range": term})
+    ids  = [t["id"] for t in top.get("items", [])]
+    if not ids:
+        return jsonify([])
+    feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
+    feats = feat_data.get("audio_features") or []
+    tracks = top.get("items", [])
+    result = []
+    for i, f in enumerate(feats):
+        if not f or i >= len(tracks):
+            continue
+        t = tracks[i]
+        result.append({
+            "name":     t["name"],
+            "artist":   t["artists"][0]["name"] if t["artists"] else "",
+            "valence":  round(f.get("valence", 0), 3),
+            "energy":   round(f.get("energy", 0), 3),
+            "danceability": round(f.get("danceability", 0), 3),
+        })
+    return jsonify(result)
+
+
+@app.route("/api/personality")
+def api_personality():
+    """Derives a music personality label from average audio features."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    top  = spotify_get("/me/top/tracks", token, params={"limit": 20, "time_range": "short_term"})
+    ids  = [t["id"] for t in top.get("items", [])]
+    if not ids:
+        return jsonify({"type": "Unknown", "desc": "", "emoji": "🎵", "scores": {}})
+    feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
+    valid = [f for f in (feat_data.get("audio_features") or []) if f]
+    if not valid:
+        return jsonify({"type": "Unknown", "desc": "", "emoji": "🎵", "scores": {}})
+
+    def avg(k): return sum(f.get(k, 0) for f in valid) / len(valid)
+
+    energy   = avg("energy")
+    valence  = avg("valence")
+    dance    = avg("danceability")
+    acoustic = avg("acousticness")
+    instru   = avg("instrumentalness")
+    speech   = avg("speechiness")
+
+    if speech > 0.35:
+        p = {"type": "The Wordsmith",        "emoji": "🎤", "desc": "Lyrics and rhythm drive you — words are your music."}
+    elif instru > 0.5:
+        p = {"type": "The Instrumentalist",  "emoji": "🎼", "desc": "Pure sound moves you more than any lyric ever could."}
+    elif acoustic > 0.65:
+        p = {"type": "The Acoustic Soul",    "emoji": "🪵", "desc": "Raw, organic sound resonates with your spirit."}
+    elif energy > 0.72 and valence > 0.65:
+        p = {"type": "The Party Starter",    "emoji": "🎉", "desc": "High energy, great vibes — you light up every room."}
+    elif energy > 0.72 and valence < 0.38:
+        p = {"type": "The Intensity Seeker", "emoji": "⚡", "desc": "You channel raw emotion into powerful, driving music."}
+    elif energy < 0.38 and valence > 0.62:
+        p = {"type": "The Daydreamer",       "emoji": "☁️", "desc": "Calm, warm, and content — music is your happy place."}
+    elif energy < 0.38 and valence < 0.38:
+        p = {"type": "The Deep Thinker",     "emoji": "🌙", "desc": "You appreciate melancholy and emotional depth."}
+    elif dance > 0.78:
+        p = {"type": "The Dance Floor King", "emoji": "💃", "desc": "Your playlist keeps every crowd moving all night."}
+    else:
+        p = {"type": "The Eclectic Explorer","emoji": "🌍", "desc": "Your taste is beautifully unpredictable and wide-ranging."}
+
+    p["scores"] = {
+        "Energy": round(energy * 100),
+        "Valence": round(valence * 100),
+        "Danceability": round(dance * 100),
+        "Acousticness": round(acoustic * 100),
+    }
+    return jsonify(p)
+
+
+@app.route("/api/recent_timeline")
+def api_recent_timeline():
+    """Recent plays formatted for a timeline view."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
+    items = []
+    for item in data.get("items", []):
+        t  = item["track"]
+        dt = datetime.strptime(item["played_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        items.append({
+            "name":      t["name"],
+            "artist":    ", ".join(a["name"] for a in t["artists"]),
+            "image":     t["album"]["images"][0]["url"] if t["album"]["images"] else None,
+            "played_at": item["played_at"],
+            "date":      dt.strftime("%b %d"),
+            "time":      dt.strftime("%H:%M"),
+            "weekday":   dt.strftime("%a"),
+        })
+    return jsonify(items)
+
+
+@app.route("/api/decade_breakdown")
+def api_decade_breakdown():
+    """Distribution of tracks by release decade."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    term = request.args.get("time_range", "short_term")
+    data = spotify_get("/me/top/tracks", token, params={"limit": 50, "time_range": term})
+    decades = defaultdict(int)
+    for t in data.get("items", []):
+        rd = t["album"].get("release_date", "")
+        if rd and len(rd) >= 4:
+            year   = int(rd[:4])
+            decade = (year // 10) * 10
+            decades[decade] += 1
+    sorted_d = sorted(decades.items())
+    return jsonify([{"decade": f"{d}s", "count": c} for d, c in sorted_d])
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

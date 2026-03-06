@@ -9,107 +9,127 @@
 </head>
 <body>
 
-<!-- ── Landing / Login ─────────────────────────────────────────────────── -->
 {% if not logged_in %}
+<!-- ── Landing ─────────────────────────────────────────────────────── -->
 <div class="landing">
+  <div class="landing-bg"></div>
   <div class="landing-card">
-    <div class="logo-wrap">
-      <svg class="logo-icon" viewBox="0 0 48 48" fill="none">
-        <circle cx="24" cy="24" r="22" fill="#1DB954" opacity=".15"/>
-        <circle cx="24" cy="24" r="8" fill="#1DB954"/>
-        <circle cx="24" cy="24" r="3" fill="#0a0a0a"/>
-        <line x1="24" y1="2" x2="24" y2="12" stroke="#1DB954" stroke-width="2.5" stroke-linecap="round"/>
-        <line x1="24" y1="36" x2="24" y2="46" stroke="#1DB954" stroke-width="2.5" stroke-linecap="round"/>
-        <line x1="2" y1="24" x2="12" y2="24" stroke="#1DB954" stroke-width="2.5" stroke-linecap="round"/>
-        <line x1="36" y1="24" x2="46" y2="24" stroke="#1DB954" stroke-width="2.5" stroke-linecap="round"/>
-      </svg>
-      <h1>Music Analyzer</h1>
+    <div class="landing-logo">
+      <div class="logo-ring"></div>
+      <svg class="logo-spotify" viewBox="0 0 168 168"><path fill="#1DB954" d="M84 0C37.6 0 0 37.6 0 84s37.6 84 84 84 84-37.6 84-84S130.4 0 84 0zm38.6 121.2c-1.5 2.5-4.8 3.3-7.3 1.8-20-12.2-45.2-15-74.9-8.2-2.9.7-5.7-1.1-6.4-4-.7-2.9 1.1-5.7 4-6.4 32.5-7.4 60.4-4.2 82.9 9.5 2.5 1.5 3.3 4.8 1.7 7.3zm10.3-22.9c-1.9 3.1-6 4.1-9.1 2.2-22.9-14.1-57.8-18.2-84.9-9.9-3.5 1.1-7.2-.9-8.3-4.4-1.1-3.5.9-7.2 4.4-8.3 30.9-9.4 69.4-4.8 95.7 11.3 3.1 1.9 4.1 6 2.2 9.1zM135 75.4c-27.5-16.3-72.9-17.8-99.2-9.8-4.2 1.3-8.7-1.1-10-5.3-1.3-4.2 1.1-8.7 5.3-10C61.9 41 112 42.7 143.2 61.4c3.8 2.2 5 7.1 2.7 10.9-2.2 3.7-7.1 5-10.9 2.8v.3z"/></svg>
     </div>
-    <p class="tagline">Visualise your Spotify listening habits — heatmaps, audio features, genre breakdowns &amp; more.</p>
+    <h1>Music Analyzer</h1>
+    <p>Discover your listening personality, weekly patterns, audio DNA and more — all from your Spotify history.</p>
     <a href="/login" class="btn-login">
-      <svg width="20" height="20" viewBox="0 0 168 168"><path fill="#1DB954" d="M84 0C37.6 0 0 37.6 0 84s37.6 84 84 84 84-37.6 84-84S130.4 0 84 0zm38.6 121.2c-1.5 2.5-4.8 3.3-7.3 1.8-20-12.2-45.2-15-74.9-8.2-2.9.7-5.7-1.1-6.4-4-.7-2.9 1.1-5.7 4-6.4 32.5-7.4 60.4-4.2 82.9 9.5 2.5 1.5 3.3 4.8 1.7 7.3zm10.3-22.9c-1.9 3.1-6 4.1-9.1 2.2-22.9-14.1-57.8-18.2-84.9-9.9-3.5 1.1-7.2-.9-8.3-4.4-1.1-3.5.9-7.2 4.4-8.3 30.9-9.4 69.4-4.8 95.7 11.3 3.1 1.9 4.1 6 2.2 9.1zM135 75.4c-27.5-16.3-72.9-17.8-99.2-9.8-4.2 1.3-8.7-1.1-10-5.3-1.3-4.2 1.1-8.7 5.3-10C61.9 41 112 42.7 143.2 61.4c3.8 2.2 5 7.1 2.7 10.9-2.2 3.7-7.1 5-10.9 2.8v.3z"/></svg>
+      <svg width="20" height="20" viewBox="0 0 168 168"><path fill="currentColor" d="M84 0C37.6 0 0 37.6 0 84s37.6 84 84 84 84-37.6 84-84S130.4 0 84 0zm38.6 121.2c-1.5 2.5-4.8 3.3-7.3 1.8-20-12.2-45.2-15-74.9-8.2-2.9.7-5.7-1.1-6.4-4-.7-2.9 1.1-5.7 4-6.4 32.5-7.4 60.4-4.2 82.9 9.5 2.5 1.5 3.3 4.8 1.7 7.3zm10.3-22.9c-1.9 3.1-6 4.1-9.1 2.2-22.9-14.1-57.8-18.2-84.9-9.9-3.5 1.1-7.2-.9-8.3-4.4-1.1-3.5.9-7.2 4.4-8.3 30.9-9.4 69.4-4.8 95.7 11.3 3.1 1.9 4.1 6 2.2 9.1zM135 75.4c-27.5-16.3-72.9-17.8-99.2-9.8-4.2 1.3-8.7-1.1-10-5.3-1.3-4.2 1.1-8.7 5.3-10C61.9 41 112 42.7 143.2 61.4c3.8 2.2 5 7.1 2.7 10.9-2.2 3.7-7.1 5-10.9 2.8v.3z"/></svg>
       Connect with Spotify
     </a>
-    <div class="features-list">
-      <span>📅 Weekly Heatmap</span>
-      <span>🎵 Top Tracks & Artists</span>
-      <span>🎛️ Audio Features Radar</span>
-      <span>🎸 Genre Breakdown</span>
-      <span>🔥 Listening Streak</span>
-      <span>⏰ Hourly Activity</span>
+    <div class="feature-pills">
+      <span>📅 Weekly Heatmap</span><span>🎭 Music Personality</span>
+      <span>🎵 Top Tracks</span><span>🎤 Top Artists</span>
+      <span>🎛️ Audio DNA</span><span>🎸 Genres</span>
+      <span>😊 Mood Quadrant</span><span>🕐 Listening Timeline</span>
     </div>
   </div>
 </div>
 
 {% else %}
-<!-- ── Dashboard ──────────────────────────────────────────────────────── -->
+<!-- ── Dashboard ──────────────────────────────────────────────────── -->
 <div id="app">
+
   <header>
-    <div class="header-left">
-      <div class="header-logo">
-        <svg width="28" height="28" viewBox="0 0 168 168"><path fill="#1DB954" d="M84 0C37.6 0 0 37.6 0 84s37.6 84 84 84 84-37.6 84-84S130.4 0 84 0zm38.6 121.2c-1.5 2.5-4.8 3.3-7.3 1.8-20-12.2-45.2-15-74.9-8.2-2.9.7-5.7-1.1-6.4-4-.7-2.9 1.1-5.7 4-6.4 32.5-7.4 60.4-4.2 82.9 9.5 2.5 1.5 3.3 4.8 1.7 7.3zm10.3-22.9c-1.9 3.1-6 4.1-9.1 2.2-22.9-14.1-57.8-18.2-84.9-9.9-3.5 1.1-7.2-.9-8.3-4.4-1.1-3.5.9-7.2 4.4-8.3 30.9-9.4 69.4-4.8 95.7 11.3 3.1 1.9 4.1 6 2.2 9.1zM135 75.4c-27.5-16.3-72.9-17.8-99.2-9.8-4.2 1.3-8.7-1.1-10-5.3-1.3-4.2 1.1-8.7 5.3-10C61.9 41 112 42.7 143.2 61.4c3.8 2.2 5 7.1 2.7 10.9-2.2 3.7-7.1 5-10.9 2.8v.3z"/></svg>
-        Music Analyzer
-      </div>
+    <div class="header-brand">
+      <svg width="24" height="24" viewBox="0 0 168 168"><path fill="#1DB954" d="M84 0C37.6 0 0 37.6 0 84s37.6 84 84 84 84-37.6 84-84S130.4 0 84 0zm38.6 121.2c-1.5 2.5-4.8 3.3-7.3 1.8-20-12.2-45.2-15-74.9-8.2-2.9.7-5.7-1.1-6.4-4-.7-2.9 1.1-5.7 4-6.4 32.5-7.4 60.4-4.2 82.9 9.5 2.5 1.5 3.3 4.8 1.7 7.3zm10.3-22.9c-1.9 3.1-6 4.1-9.1 2.2-22.9-14.1-57.8-18.2-84.9-9.9-3.5 1.1-7.2-.9-8.3-4.4-1.1-3.5.9-7.2 4.4-8.3 30.9-9.4 69.4-4.8 95.7 11.3 3.1 1.9 4.1 6 2.2 9.1zM135 75.4c-27.5-16.3-72.9-17.8-99.2-9.8-4.2 1.3-8.7-1.1-10-5.3-1.3-4.2 1.1-8.7 5.3-10C61.9 41 112 42.7 143.2 61.4c3.8 2.2 5 7.1 2.7 10.9-2.2 3.7-7.1 5-10.9 2.8v.3z"/></svg>
+      Music Analyzer
+    </div>
+    <nav class="tabs" id="nav-tabs">
+      <button class="tab active" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="personality">Personality</button>
+      <button class="tab" data-tab="heatmap">Heatmap</button>
+      <button class="tab" data-tab="toptracks">Tracks</button>
+      <button class="tab" data-tab="topartists">Artists</button>
+      <button class="tab" data-tab="audio">Audio DNA</button>
+      <button class="tab" data-tab="genres">Genres</button>
+      <button class="tab" data-tab="timeline">Timeline</button>
+    </nav>
+    <div class="header-right">
       <div id="profile-chip" class="profile-chip hidden">
         <img id="avatar" src="" alt="" />
         <span id="username"></span>
       </div>
+      <a href="/logout" class="btn-logout">↩ Logout</a>
     </div>
-    <nav class="tabs">
-      <button class="tab active" data-tab="overview">Overview</button>
-      <button class="tab" data-tab="heatmap">Heatmap</button>
-      <button class="tab" data-tab="toptracks">Top Tracks</button>
-      <button class="tab" data-tab="topartists">Top Artists</button>
-      <button class="tab" data-tab="audio">Audio DNA</button>
-      <button class="tab" data-tab="genres">Genres</button>
-    </nav>
-    <a href="/logout" class="btn-logout">Disconnect</a>
   </header>
 
-  <!-- ── Overview ─────────────────────────────────────────────────── -->
+  <!-- OVERVIEW -->
   <section class="tab-content active" id="tab-overview">
     <div class="stat-grid">
-      <div class="stat-card" id="stat-streak">
+      <div class="stat-card pulse-card">
         <div class="stat-icon">🔥</div>
-        <div class="stat-value" id="streak-val">—</div>
+        <div class="stat-value" id="streak-val">0</div>
         <div class="stat-label">Day Streak</div>
       </div>
-      <div class="stat-card" id="stat-days">
+      <div class="stat-card pulse-card">
         <div class="stat-icon">📅</div>
-        <div class="stat-value" id="days-val">—</div>
-        <div class="stat-label">Active Days (last 50 plays)</div>
+        <div class="stat-value" id="days-val">0</div>
+        <div class="stat-label">Active Days</div>
       </div>
-      <div class="stat-card" id="stat-plays">
+      <div class="stat-card pulse-card">
         <div class="stat-icon">▶️</div>
-        <div class="stat-value" id="plays-val">—</div>
-        <div class="stat-label">Tracked Plays</div>
+        <div class="stat-value" id="plays-val">0</div>
+        <div class="stat-label">Recent Plays</div>
       </div>
-      <div class="stat-card" id="stat-top-genre">
+      <div class="stat-card pulse-card">
         <div class="stat-icon">🎸</div>
         <div class="stat-value small" id="top-genre-val">—</div>
         <div class="stat-label">Top Genre</div>
       </div>
     </div>
-
     <div class="two-col">
-      <div class="card">
-        <h2>Hourly Activity</h2>
-        <p class="card-sub">When do you listen most? (last 50 plays)</p>
-        <canvas id="hourly-chart" height="160"></canvas>
+      <div class="glass-card">
+        <div class="card-title-row"><h2>Hourly Activity</h2><span class="badge">Last 50 plays</span></div>
+        <canvas id="hourly-chart" height="180"></canvas>
       </div>
-      <div class="card">
-        <h2>Recent Tracks</h2>
-        <p class="card-sub">Last 10 played</p>
+      <div class="glass-card">
+        <div class="card-title-row"><h2>Recent Plays</h2><span class="badge">Last 10</span></div>
         <ul class="track-list" id="recent-list"></ul>
       </div>
     </div>
   </section>
 
-  <!-- ── Heatmap ───────────────────────────────────────────────────── -->
+  <!-- PERSONALITY -->
+  <section class="tab-content hidden" id="tab-personality">
+    <div class="personality-hero" id="personality-hero">
+      <div class="personality-emoji" id="p-emoji">🎵</div>
+      <div class="personality-type" id="p-type">Loading…</div>
+      <div class="personality-desc" id="p-desc"></div>
+      <div class="personality-scores" id="p-scores"></div>
+    </div>
+    <div class="two-col" style="margin-top:20px">
+      <div class="glass-card">
+        <div class="card-title-row"><h2>Music Era</h2><span class="badge">By decade</span></div>
+        <canvas id="decade-chart" height="220"></canvas>
+      </div>
+      <div class="glass-card">
+        <div class="card-title-row"><h2>Mood Quadrant</h2><span class="badge">Valence × Energy</span></div>
+        <div class="quadrant-labels">
+          <span class="ql ql-tl">😤 Intense</span>
+          <span class="ql ql-tr">🎉 Happy</span>
+          <span class="ql ql-bl">😢 Melancholy</span>
+          <span class="ql ql-br">😌 Peaceful</span>
+        </div>
+        <canvas id="mood-chart" height="220"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- HEATMAP -->
   <section class="tab-content hidden" id="tab-heatmap">
-    <div class="card full">
-      <h2>Weekly Listening Heatmap</h2>
-      <p class="card-sub">Each dot = plays at that hour on that day. Bigger &amp; brighter = more plays.</p>
+    <div class="glass-card full">
+      <div class="card-title-row">
+        <h2>Weekly Listening Heatmap</h2>
+        <span class="badge">Dot size &amp; glow = intensity</span>
+      </div>
       <div class="heatmap-wrap">
         <div class="heatmap-y-labels">
           <span></span>
@@ -123,38 +143,42 @@
       </div>
       <div class="heatmap-legend">
         <span>Less</span>
-        <span class="dot-legend" style="--c:0.15"></span>
-        <span class="dot-legend" style="--c:0.35"></span>
-        <span class="dot-legend" style="--c:0.6"></span>
-        <span class="dot-legend" style="--c:0.85"></span>
-        <span class="dot-legend" style="--c:1"></span>
+        <span class="dot-l" style="--op:.15"></span>
+        <span class="dot-l" style="--op:.35"></span>
+        <span class="dot-l" style="--op:.6"></span>
+        <span class="dot-l" style="--op:.85"></span>
+        <span class="dot-l" style="--op:1"></span>
         <span>More</span>
       </div>
-      <div class="tooltip" id="heatmap-tooltip"></div>
     </div>
+    <div id="hm-tooltip" class="hm-tooltip"></div>
   </section>
 
-  <!-- ── Top Tracks ────────────────────────────────────────────────── -->
+  <!-- TOP TRACKS -->
   <section class="tab-content hidden" id="tab-toptracks">
-    <div class="card full">
-      <div class="card-header-row">
+    <div class="glass-card full">
+      <div class="card-title-row">
         <h2>Top Tracks</h2>
-        <div class="time-selector">
+        <div class="time-selector" id="tracks-time">
           <button class="time-btn active" data-range="short_term">4 weeks</button>
           <button class="time-btn" data-range="medium_term">6 months</button>
           <button class="time-btn" data-range="long_term">All time</button>
         </div>
       </div>
       <div class="tracks-grid" id="tracks-grid"></div>
+      <div class="glass-card" style="margin-top:20px">
+        <div class="card-title-row"><h2>Era Distribution</h2><span class="badge">From your top tracks</span></div>
+        <canvas id="decade-chart-tracks" height="140"></canvas>
+      </div>
     </div>
   </section>
 
-  <!-- ── Top Artists ───────────────────────────────────────────────── -->
+  <!-- TOP ARTISTS -->
   <section class="tab-content hidden" id="tab-topartists">
-    <div class="card full">
-      <div class="card-header-row">
+    <div class="glass-card full">
+      <div class="card-title-row">
         <h2>Top Artists</h2>
-        <div class="time-selector">
+        <div class="time-selector" id="artists-time">
           <button class="time-btn active" data-range="short_term">4 weeks</button>
           <button class="time-btn" data-range="medium_term">6 months</button>
           <button class="time-btn" data-range="long_term">All time</button>
@@ -164,41 +188,67 @@
     </div>
   </section>
 
-  <!-- ── Audio DNA ─────────────────────────────────────────────────── -->
+  <!-- AUDIO DNA -->
   <section class="tab-content hidden" id="tab-audio">
     <div class="two-col">
-      <div class="card">
-        <h2>Audio DNA Radar</h2>
-        <p class="card-sub">Average audio features of your top 20 tracks (last 4 weeks)</p>
+      <div class="glass-card">
+        <div class="card-title-row"><h2>Audio DNA</h2><span class="badge">Top 20 tracks avg</span></div>
         <canvas id="radar-chart"></canvas>
       </div>
-      <div class="card">
-        <h2>Feature Breakdown</h2>
-        <p class="card-sub">What these features mean</p>
-        <div class="feature-bars" id="feature-bars"></div>
+      <div class="glass-card">
+        <div class="card-title-row"><h2>Feature Breakdown</h2></div>
+        <div id="feature-bars"></div>
+      </div>
+    </div>
+    <div class="glass-card full" style="margin-top:20px">
+      <div class="card-title-row"><h2>Mood Quadrant</h2><span class="badge">Your top 50 tracks plotted</span></div>
+      <div style="position:relative">
+        <div class="quadrant-labels">
+          <span class="ql ql-tl">😤 Intense</span>
+          <span class="ql ql-tr">🎉 Happy &amp; Energetic</span>
+          <span class="ql ql-bl">😢 Melancholy</span>
+          <span class="ql ql-br">😌 Peaceful</span>
+        </div>
+        <canvas id="mood-chart-audio" height="300"></canvas>
       </div>
     </div>
   </section>
 
-  <!-- ── Genres ────────────────────────────────────────────────────── -->
+  <!-- GENRES -->
   <section class="tab-content hidden" id="tab-genres">
     <div class="two-col">
-      <div class="card">
-        <h2>Genre Distribution</h2>
+      <div class="glass-card">
+        <div class="card-title-row"><h2>Genre Distribution</h2>
+          <div class="time-selector" id="genres-time">
+            <button class="time-btn active" data-range="short_term">4 weeks</button>
+            <button class="time-btn" data-range="medium_term">6 months</button>
+            <button class="time-btn" data-range="long_term">All time</button>
+          </div>
+        </div>
         <canvas id="genre-chart" height="300"></canvas>
       </div>
-      <div class="card">
-        <h2>Genre List</h2>
+      <div class="glass-card">
+        <div class="card-title-row"><h2>Genre Rankings</h2></div>
         <div class="genre-list" id="genre-list"></div>
       </div>
+    </div>
+  </section>
+
+  <!-- TIMELINE -->
+  <section class="tab-content hidden" id="tab-timeline">
+    <div class="glass-card full">
+      <div class="card-title-row"><h2>Listening Timeline</h2><span class="badge">Last 50 plays</span></div>
+      <div class="timeline" id="timeline"></div>
     </div>
   </section>
 
 </div><!-- /#app -->
 
 <div class="loader" id="loader">
-  <div class="spinner"></div>
-  <p>Loading your music data…</p>
+  <div class="loader-inner">
+    <div class="spinner-ring"></div>
+    <p>Loading your music data…</p>
+  </div>
 </div>
 
 <script src="/static/app.js"></script>
