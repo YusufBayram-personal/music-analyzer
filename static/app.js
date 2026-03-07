@@ -10,6 +10,7 @@ async function api(path){
   const r = await fetch(path);
   if(r.status === 403){
     const data = await r.json().catch(() => ({}));
+    if(data.error === 'forbidden') throw new ForbiddenError(data.msg);
     if(data.error === 'deprecated') throw new DeprecatedError();
   }
   if(!r.ok){
@@ -20,6 +21,8 @@ async function api(path){
   }
   return r.json();
 }
+
+class ForbiddenError extends Error { constructor(msg){ super(msg || 'forbidden'); } }
 
 class DeprecatedError extends Error { constructor(){ super('deprecated'); } }
 

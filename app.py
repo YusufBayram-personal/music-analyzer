@@ -215,16 +215,16 @@ init_db()
 
 # ── Spotify helpers ───────────────────────────────────────────────────────────
 
-class SpotifyDeprecatedError(Exception):
-    """Raised when Spotify returns 403 on a deprecated endpoint."""
+class SpotifyForbiddenError(Exception):
+    """Raised when Spotify returns 403 (deprecated endpoint or user not authorized)."""
     pass
 
 
 def spotify_get(endpoint, token, params=None):
     headers = {"Authorization": f"Bearer {token}"}
     resp = requests.get(f"{API_BASE}{endpoint}", headers=headers, params=params)
-    if resp.status_code == 403 and "audio-features" in endpoint:
-        raise SpotifyDeprecatedError("audio-features endpoint is deprecated for this app")
+    if resp.status_code == 403:
+        raise SpotifyForbiddenError(f"403 Forbidden on {endpoint} — user may not be added as tester in Spotify Dashboard")
     resp.raise_for_status()
     return resp.json()
 
@@ -369,15 +369,19 @@ def callback():
     except Exception as e:
         print(f"WARNING: /me call failed for user: {e}")
 
-    # Persist user + initial play history (only if we got the user ID)
+    # Persist user to DB (even if Spotify data endpoints return 403)
     if spotify_id and DATABASE_URL:
         try:
             with get_db() as conn:
                 if conn:
                     upsert_user(conn, spotify_id, display_name, refresh_token)
-            sync_recent_tracks(spotify_id, access_token)
         except Exception as e:
             print(f"DB upsert failed (non-fatal): {e}")
+        # Sync play history separately — may fail with 403 for non-tester users
+        try:
+            sync_recent_tracks(spotify_id, access_token)
+        except Exception as e:
+            print(f"Initial sync failed for {spotify_id} (non-fatal): {e}")
 
     response = make_response(redirect("/"))
     if spotify_id:
@@ -410,7 +414,10 @@ def api_recent():
     token = get_valid_token()
     if not token:
         return jsonify({"error": "not_authenticated"}), 401
-    data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
+    try:
+        data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
+    except SpotifyForbiddenError:
+        return jsonify({"error": "forbidden", "msg": "Spotify denied access — user must be added as tester in the Spotify Developer Dashboard"}), 403
     return jsonify(data)
 
 
@@ -504,13 +511,16 @@ def api_weekly_heatmap():
 
     if not grid:
         # Fallback: original Spotify-only path
-        data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
-        for item in data.get("items", []):
-            dt = datetime.strptime(item["played_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
-            day = dt.weekday()
-            hour = dt.hour
-            grid[(day, hour)] += 1
-            tracks_by_slot[(day, hour)].append(item["track"]["name"])
+        try:
+            data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
+            for item in data.get("items", []):
+                dt = datetime.strptime(item["played_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+                day = dt.weekday()
+                hour = dt.hour
+                grid[(day, hour)] += 1
+                tracks_by_slot[(day, hour)].append(item["track"]["name"])
+        except SpotifyForbiddenError:
+            pass  # Return empty grid
 
     result = []
     for (day, hour), count in grid.items():
@@ -576,7 +586,7 @@ def api_audio_features():
 
     try:
         feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
-    except SpotifyDeprecatedError:
+    except SpotifyForbiddenError:
         return jsonify({"error": "deprecated"}), 403
 
     features = feat_data.get("audio_features") or []
@@ -656,7 +666,10 @@ def api_listening_streak():
             print(f"Streak DB query failed, falling back: {e}")
 
     # Fallback: original Spotify-only path
-    data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
+    try:
+        data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
+    except SpotifyForbiddenError:
+        return jsonify({"streak": 0, "active_days": 0, "total_plays": 0})
     days = set()
     for item in data.get("items", []):
         dt = datetime.strptime(item["played_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
@@ -687,7 +700,7 @@ def api_mood_scatter():
         return jsonify([])
     try:
         feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
-    except SpotifyDeprecatedError:
+    except SpotifyForbiddenError:
         return jsonify({"error": "deprecated"}), 403
     feats = feat_data.get("audio_features") or []
     tracks = top.get("items", [])
@@ -718,7 +731,7 @@ def api_personality():
         return jsonify({"type": "Unknown", "desc": "", "emoji": "🎵", "scores": {}})
     try:
         feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
-    except SpotifyDeprecatedError:
+    except SpotifyForbiddenError:
         return jsonify({"error": "deprecated"}), 403
     valid = [f for f in (feat_data.get("audio_features") or []) if f]
     if not valid:
