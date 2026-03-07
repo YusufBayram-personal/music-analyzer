@@ -109,29 +109,66 @@ def upsert_user(conn, spotify_id, display_name, refresh_token):
 
 
 def sync_recent_tracks(spotify_user_id, access_token):
-    """Fetch last 50 plays from Spotify and insert any new ones into play_history.
-    Deduplication is handled by the UNIQUE(spotify_user_id, played_at) constraint.
+    """Fetch recent plays from Spotify and insert any new ones into play_history.
+    Uses the 'after' cursor to only fetch tracks newer than what we already have,
+    and paginates to capture up to 250 tracks per sync.
+    Deduplication is handled by UNIQUE(spotify_user_id, played_at) constraint.
     Returns the count of newly inserted rows."""
     if not DATABASE_URL:
         return 0
+
+    # Find the timestamp of the newest track we already have for this user
+    after_ms = None
     try:
-        data = spotify_get("/me/player/recently-played", access_token, params={"limit": 50})
+        with get_db() as conn:
+            if conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT MAX(played_at) FROM play_history WHERE spotify_user_id = %s",
+                    (spotify_user_id,)
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    # Spotify wants Unix milliseconds for the 'after' parameter
+                    after_ms = int(row[0].timestamp() * 1000)
     except Exception:
-        return 0
+        pass
 
-    rows = []
-    for item in data.get("items", []):
-        t = item["track"]
-        rows.append((
-            spotify_user_id,
-            t["id"],
-            t["name"],
-            ", ".join(a["name"] for a in t["artists"]),
-            t["album"]["name"],
-            item["played_at"],
-        ))
+    # Fetch up to 5 pages (250 tracks max) starting from our last known track
+    all_rows = []
+    params = {"limit": 50}
+    if after_ms:
+        params["after"] = after_ms
 
-    if not rows:
+    for page in range(5):
+        try:
+            data = spotify_get("/me/player/recently-played", access_token, params=params)
+        except Exception:
+            break
+
+        items = data.get("items", [])
+        if not items:
+            break
+
+        for item in items:
+            t = item["track"]
+            all_rows.append((
+                spotify_user_id,
+                t["id"],
+                t["name"],
+                ", ".join(a["name"] for a in t["artists"]),
+                t["album"]["name"],
+                item["played_at"],
+            ))
+
+        # Check if there are more pages (use 'before' cursor to go further back)
+        cursors = data.get("cursors") or {}
+        before_cursor = cursors.get("before")
+        if not before_cursor or len(items) < 50:
+            break  # No more pages
+        params = {"limit": 50, "before": before_cursor}
+
+    if not all_rows:
         return 0
 
     inserted = 0
@@ -140,7 +177,7 @@ def sync_recent_tracks(spotify_user_id, access_token):
             if conn is None:
                 return 0
             cur = conn.cursor()
-            for row in rows:
+            for row in all_rows:
                 cur.execute("""
                     INSERT INTO play_history
                         (spotify_user_id, track_id, track_name, artist_name, album_name, played_at)
@@ -807,21 +844,21 @@ def background_sync_all_users():
     print("[BG-SYNC] Done.")
 
 
-# Start the scheduler (runs every 2 hours)
-SYNC_INTERVAL_HOURS = int(os.getenv("SYNC_INTERVAL_HOURS", "2"))
+# Start the scheduler (default: every 30 minutes)
+SYNC_INTERVAL_MIN = int(os.getenv("SYNC_INTERVAL_MIN", "30"))
 
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(
     background_sync_all_users,
     trigger="interval",
-    hours=SYNC_INTERVAL_HOURS,
+    minutes=SYNC_INTERVAL_MIN,
     id="bg_sync",
     replace_existing=True,
     max_instances=1,
 )
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown(wait=False))
-print(f"[BG-SYNC] Scheduler started — syncing every {SYNC_INTERVAL_HOURS}h")
+print(f"[BG-SYNC] Scheduler started — syncing every {SYNC_INTERVAL_MIN} min")
 
 
 if __name__ == "__main__":
