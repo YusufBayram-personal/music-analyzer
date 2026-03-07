@@ -12,7 +12,12 @@ async function api(path){
     const data = await r.json().catch(() => ({}));
     if(data.error === 'deprecated') throw new DeprecatedError();
   }
-  if(!r.ok) throw new Error(`${path} → ${r.status}`);
+  if(!r.ok){
+    const errData = await r.json().catch(() => ({}));
+    const err = new Error(errData.msg || `${path} → ${r.status}`);
+    err.serverMsg = errData.msg || '';
+    throw err;
+  }
   return r.json();
 }
 
@@ -529,7 +534,7 @@ async function loadTimeline(){
       syncStatus.textContent = `+${result.new_tracks} new · ${result.total_stored} total`;
       syncStatus.style.color = '#1DB954';
     } catch(e) {
-      syncStatus.textContent = 'Sync failed';
+      syncStatus.textContent = e.serverMsg ? `Error: ${e.serverMsg}` : 'Sync failed';
       syncStatus.style.color = '#e05c5c';
     } finally {
       syncBtn.disabled = false;

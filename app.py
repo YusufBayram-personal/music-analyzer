@@ -38,7 +38,11 @@ def get_db():
     if not DATABASE_URL:
         yield None
         return
-    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+    # Don't duplicate sslmode if already in the URL (Neon/Supabase include it)
+    if "sslmode=" in DATABASE_URL:
+        conn = psycopg2.connect(DATABASE_URL)
+    else:
+        conn = psycopg2.connect(DATABASE_URL, sslmode="require")
     try:
         yield conn
         conn.commit()
@@ -364,11 +368,21 @@ def api_sync():
     """Manual sync: fetch last 50 plays from Spotify and save new ones to DB."""
     token = get_valid_token()
     if not token:
-        return jsonify({"error": "not_authenticated"}), 401
+        return jsonify({"error": "not_authenticated", "msg": "Please log in again"}), 401
 
     spotify_user_id = get_or_set_user_id(token)
     if not spotify_user_id or not DATABASE_URL:
-        return jsonify({"error": "persistence_not_configured"}), 400
+        return jsonify({"error": "persistence_not_configured", "msg": "Database not configured"}), 400
+
+    # Ensure user row exists (handles case where callback didn't save them)
+    try:
+        profile = spotify_get("/me", token)
+        display_name = profile.get("display_name") or spotify_user_id
+        with get_db() as conn:
+            if conn:
+                upsert_user(conn, spotify_user_id, display_name, session.get("refresh_token", ""))
+    except Exception as e:
+        return jsonify({"error": "db_connection", "msg": f"Database error: {e}"}), 500
 
     new_count = sync_recent_tracks(spotify_user_id, token)
 
@@ -382,8 +396,8 @@ def api_sync():
                     (spotify_user_id,)
                 )
                 total = cur.fetchone()[0]
-    except Exception:
-        pass
+    except Exception as e:
+        return jsonify({"error": "db_query", "msg": f"Count query failed: {e}"}), 500
 
     return jsonify({"new_tracks": new_count, "total_stored": total})
 
