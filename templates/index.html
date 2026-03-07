@@ -6,6 +6,7 @@
   <title>Music Analyzer</title>
   <link rel="stylesheet" href="/static/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -51,6 +52,7 @@
       <button class="tab" data-tab="audio">Audio DNA</button>
       <button class="tab" data-tab="genres">Genres</button>
       <button class="tab" data-tab="timeline">Timeline</button>
+      <button class="tab" data-tab="weekly">Weekly</button>
       <button class="tab hidden" data-tab="admin" id="admin-tab">Admin</button>
     </nav>
     <div class="header-right">
@@ -104,6 +106,11 @@
         <div class="card-title-row"><h2>Recent Plays</h2><span class="badge">Last 10</span></div>
         <ul class="track-list" id="recent-list"></ul>
       </div>
+    </div>
+    <!-- Milestones -->
+    <div class="glass-card full" style="margin-top:20px">
+      <div class="card-title-row"><h2>Milestones</h2><span class="badge">Your achievements</span></div>
+      <div class="milestones-grid" id="milestones-grid"></div>
     </div>
   </section>
 
@@ -181,6 +188,12 @@
         <canvas id="decade-chart-tracks" height="140"></canvas>
       </div>
     </div>
+    {% if db_configured %}
+    <div class="glass-card full" style="margin-top:20px">
+      <div class="card-title-row"><h2>Most Played</h2><span class="badge">From your history</span></div>
+      <div class="most-played-list" id="most-played-list"></div>
+    </div>
+    {% endif %}
   </section>
 
   <!-- TOP ARTISTS -->
@@ -249,6 +262,60 @@
     <div class="glass-card full">
       <div class="card-title-row"><h2>Listening Timeline</h2><span class="badge">Last 50 plays</span></div>
       <div class="timeline" id="timeline"></div>
+    </div>
+  </section>
+
+  <!-- WEEKLY REPORT -->
+  <section class="tab-content hidden" id="tab-weekly">
+    <div class="glass-card full" id="weekly-report">
+      <div class="card-title-row"><h2>Weekly Report</h2><span class="badge" id="weekly-period"></span></div>
+      <div class="stat-grid" id="weekly-stats"></div>
+      <div class="two-col" style="margin-top:18px">
+        <div class="glass-card">
+          <div class="card-title-row"><h2>Daily Plays</h2></div>
+          <canvas id="weekly-daily-chart" height="200"></canvas>
+        </div>
+        <div class="glass-card">
+          <div class="card-title-row"><h2>Hourly Activity</h2></div>
+          <canvas id="weekly-hourly-chart" height="200"></canvas>
+        </div>
+      </div>
+      <div class="two-col" style="margin-top:18px">
+        <div class="glass-card">
+          <div class="card-title-row"><h2>Top Tracks This Week</h2></div>
+          <div id="weekly-tracks"></div>
+        </div>
+        <div class="glass-card">
+          <div class="card-title-row"><h2>Top Artists This Week</h2></div>
+          <div id="weekly-artists"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Profile Card -->
+    <div class="glass-card full" style="margin-top:20px">
+      <div class="card-title-row"><h2>Shareable Profile Card</h2><button class="btn-sm" id="download-card-btn">Download Card</button></div>
+      <div class="profile-card-wrap">
+        <div class="profile-card" id="profile-card">
+          <div class="pc-header">
+            <img id="pc-avatar" src="" alt="" class="pc-avatar"/>
+            <div class="pc-name" id="pc-name"></div>
+            <div class="pc-subtitle">Music Analyzer</div>
+          </div>
+          <div class="pc-stats" id="pc-stats"></div>
+          <div class="pc-section">
+            <div class="pc-label">Top Tracks</div>
+            <div id="pc-tracks"></div>
+          </div>
+          <div class="pc-section">
+            <div class="pc-label">Top Artists</div>
+            <div id="pc-artists"></div>
+          </div>
+          <div class="pc-footer">
+            <span>🎵 musicanalyzer</span>
+            <span id="pc-genre"></span>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 

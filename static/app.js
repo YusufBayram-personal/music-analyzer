@@ -75,11 +75,12 @@ async function loadTab(tab){
     switch(tab){
       case 'personality': await loadPersonality(); break;
       case 'heatmap':     await loadHeatmap(); break;
-      case 'toptracks':   await loadTopTracks('short_term'); break;
+      case 'toptracks':   await loadTopTracks('short_term'); loadMostPlayed(); break;
       case 'topartists':  await loadTopArtists('short_term'); break;
       case 'audio':       await loadAudio(); break;
       case 'genres':      await loadGenres('short_term'); break;
       case 'timeline':    await loadTimeline(); break;
+      case 'weekly':      await loadWeekly(); break;
       case 'admin':       await loadAdmin(); break;
     }
   } catch(e){ console.error(e); }
@@ -124,6 +125,9 @@ async function initDashboard(){
 
     buildHourlyChart(heatmap);
     buildRecentList(recent.slice(0, 10));
+
+    // Load milestones (non-blocking)
+    api(`/api/milestones?tz=${tz}`).then(buildMilestones).catch(()=>{});
   } catch(e){ console.error(e); }
   showLoader(false);
 }
@@ -535,6 +539,193 @@ async function loadTimeline(){
     </div>`;
   }).join('');
 }
+
+/* ── Most Played ─────────────────────────────────────────────────── */
+async function loadMostPlayed(){
+  try {
+    const tracks = await api('/api/most_played?limit=20');
+    const el = $('#most-played-list');
+    if(!el || !tracks.length){ if(el) el.innerHTML = '<p style="color:var(--dim);padding:12px">No play history yet. Hit Sync to start tracking!</p>'; return; }
+    el.innerHTML = tracks.map((t,i) => `
+      <div class="mp-row">
+        <span class="mp-rank">${i+1}</span>
+        <div class="mp-info">
+          <div class="mp-name">${esc(t.name)}</div>
+          <div class="mp-artist">${esc(t.artist)}</div>
+        </div>
+        <div class="mp-count">${t.play_count}<span class="mp-count-label"> plays</span></div>
+      </div>`).join('');
+  } catch(e){ console.error('Most played:', e); }
+}
+
+/* ── Milestones ──────────────────────────────────────────────────── */
+function buildMilestones(milestones){
+  const el = $('#milestones-grid');
+  if(!el || !milestones.length) return;
+
+  // Sort: unlocked first, then by target ascending
+  milestones.sort((a,b) => {
+    if(a.unlocked !== b.unlocked) return a.unlocked ? -1 : 1;
+    return a.target - b.target;
+  });
+
+  el.innerHTML = milestones.map(m => {
+    const pct = Math.min(Math.round(m.current / m.target * 100), 100);
+    return `<div class="milestone ${m.unlocked ? 'unlocked' : 'locked'}">
+      <div class="ms-emoji">${m.emoji}</div>
+      <div class="ms-title">${esc(m.title)}</div>
+      <div class="ms-desc">${esc(m.desc)}</div>
+      <div class="ms-progress-bg"><div class="ms-progress-fill" style="width:${pct}%"></div></div>
+      <div class="ms-pct">${m.unlocked ? '✓ Unlocked' : `${m.current} / ${m.target}`}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ── Weekly Report ───────────────────────────────────────────────── */
+let weeklyDailyChart = null, weeklyHourlyChart = null;
+
+async function loadWeekly(){
+  const tz = encodeURIComponent(USER_TZ);
+
+  let data;
+  try {
+    data = await api(`/api/weekly_summary?tz=${tz}`);
+  } catch(e){
+    const el = $('#weekly-report');
+    if(el) el.innerHTML = '<p style="color:var(--dim);padding:24px;text-align:center">Weekly report requires a database. No data available yet.</p>';
+    return;
+  }
+
+  const tw = data.this_week;
+  const lw = data.last_week;
+  const ch = data.changes;
+
+  // Period badge
+  const periodEl = $('#weekly-period');
+  if(periodEl){
+    const start = new Date(data.period.this_start);
+    periodEl.textContent = `Week of ${start.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
+  }
+
+  // Stats with comparison
+  function changeTag(val){
+    if(val > 0) return `<span class="change-up">▲ ${val}%</span>`;
+    if(val < 0) return `<span class="change-down">▼ ${Math.abs(val)}%</span>`;
+    return `<span class="change-flat">— 0%</span>`;
+  }
+
+  $('#weekly-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-icon">▶️</div><div class="stat-value">${tw.total_plays}</div><div class="stat-label">Plays ${changeTag(ch.plays)}</div></div>
+    <div class="stat-card"><div class="stat-icon">🎵</div><div class="stat-value">${tw.unique_tracks}</div><div class="stat-label">Unique Tracks ${changeTag(ch.tracks)}</div></div>
+    <div class="stat-card"><div class="stat-icon">🎤</div><div class="stat-value">${tw.unique_artists}</div><div class="stat-label">Artists ${changeTag(ch.artists)}</div></div>
+    <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-value">${lw.total_plays}</div><div class="stat-label">Last Week Plays</div></div>
+  `;
+
+  // Daily chart
+  if(weeklyDailyChart){ weeklyDailyChart.destroy(); weeklyDailyChart=null; }
+  const dailyLabels = tw.daily.map(d => {
+    const dt = new Date(d.date + 'T00:00:00');
+    return dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  });
+  weeklyDailyChart = new Chart($('#weekly-daily-chart').getContext('2d'),{
+    type:'bar',
+    data:{
+      labels: dailyLabels,
+      datasets:[{
+        label:'Plays', data: tw.daily.map(d=>d.count),
+        backgroundColor:'rgba(29,185,84,.5)', borderColor:'#1DB954',
+        borderWidth:1, borderRadius:6, borderSkipped:false
+      }]
+    },
+    options:{responsive:true, plugins:{legend:{display:false}},
+      scales:{x:{ticks:{font:{size:10}}}, y:{beginAtZero:true, ticks:{font:{size:10}}}}}
+  });
+
+  // Hourly chart
+  if(weeklyHourlyChart){ weeklyHourlyChart.destroy(); weeklyHourlyChart=null; }
+  weeklyHourlyChart = new Chart($('#weekly-hourly-chart').getContext('2d'),{
+    type:'bar',
+    data:{
+      labels: Array.from({length:24},(_,h)=>`${h}:00`),
+      datasets:[
+        {label:'This Week', data:tw.hourly, backgroundColor:'rgba(29,185,84,.5)', borderColor:'#1DB954', borderWidth:1, borderRadius:4, borderSkipped:false},
+        {label:'Last Week', data:lw.hourly, backgroundColor:'rgba(139,92,246,.3)', borderColor:'#8b5cf6', borderWidth:1, borderRadius:4, borderSkipped:false},
+      ]
+    },
+    options:{responsive:true,
+      plugins:{legend:{labels:{color:'#eeeef5',font:{size:11}}}},
+      scales:{x:{ticks:{font:{size:8},maxRotation:0,callback(v,i){return i%6===0?this.getLabelForValue(i):''}}}, y:{beginAtZero:true,ticks:{font:{size:10}}}}}
+  });
+
+  // Top tracks
+  $('#weekly-tracks').innerHTML = tw.top_tracks.length ? tw.top_tracks.map((t,i) => `
+    <div class="admin-item">
+      <span class="admin-rank">${i+1}</span>
+      <div><strong>${esc(t.name)}</strong><br><span class="admin-user-meta">${esc(t.artist)} · ${t.count} plays</span></div>
+    </div>`).join('') : '<p style="color:var(--dim);padding:12px">No plays this week yet</p>';
+
+  // Top artists
+  $('#weekly-artists').innerHTML = tw.top_artists.length ? tw.top_artists.map((a,i) => `
+    <div class="admin-item">
+      <span class="admin-rank">${i+1}</span>
+      <div><strong>${esc(a.name)}</strong><br><span class="admin-user-meta">${a.count} plays</span></div>
+    </div>`).join('') : '<p style="color:var(--dim);padding:12px">No plays this week yet</p>';
+
+  // Load profile card
+  loadProfileCard();
+}
+
+/* ── Profile Card ────────────────────────────────────────────────── */
+async function loadProfileCard(){
+  const tz = encodeURIComponent(USER_TZ);
+  try {
+    const card = await api(`/api/profile_card?tz=${tz}`);
+    if(card.image) $('#pc-avatar').src = card.image;
+    $('#pc-name').textContent = card.display_name || 'Music Lover';
+
+    $('#pc-stats').innerHTML = `
+      <div class="pc-stat"><div class="pc-stat-val">${card.total_plays}</div><div class="pc-stat-label">Plays</div></div>
+      <div class="pc-stat"><div class="pc-stat-val">${card.active_days}</div><div class="pc-stat-label">Active Days</div></div>
+      <div class="pc-stat"><div class="pc-stat-val">${card.streak}</div><div class="pc-stat-label">Day Streak</div></div>
+    `;
+
+    $('#pc-tracks').innerHTML = card.top_tracks.map((t,i) =>
+      `<div class="pc-item">${i+1}. ${esc(t.name)} <span style="color:var(--dim)">— ${esc(t.artist)}</span></div>`
+    ).join('') || '<div class="pc-item" style="color:var(--dim)">No data</div>';
+
+    $('#pc-artists').innerHTML = card.top_artists.map((a,i) =>
+      `<div class="pc-item">${i+1}. ${esc(a)}</div>`
+    ).join('') || '<div class="pc-item" style="color:var(--dim)">No data</div>';
+
+    if(card.top_genre) $('#pc-genre').textContent = `🎸 ${card.top_genre}`;
+  } catch(e){ console.error('Profile card:', e); }
+}
+
+// Download profile card as image
+(function(){
+  const btn = $('#download-card-btn');
+  if(!btn) return;
+  btn.addEventListener('click', async () => {
+    const card = $('#profile-card');
+    if(!card || typeof html2canvas === 'undefined') return;
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    try {
+      const canvas = await html2canvas(card, {
+        backgroundColor: '#0e0e1a',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      const link = document.createElement('a');
+      link.download = 'music-analyzer-card.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch(e){ console.error('Card export:', e); }
+    btn.disabled = false;
+    btn.textContent = 'Download Card';
+  });
+})();
 
 /* ── Admin ────────────────────────────────────────────────────────── */
 async function loadAdmin(){

@@ -210,6 +210,58 @@ canvas { position: relative; z-index: 1; }
 .genre-pill { display:inline-block; background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:4px 12px; margin:4px; font-size:12px; color:var(--dim); }
 .genre-pill strong { color:var(--accent); margin-left:4px; }
 
+/* ── Most Played ─────────────────────────────────────────────────── */
+.most-played-list { display:flex; flex-direction:column; gap:0; }
+.mp-row { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--border); }
+.mp-row:last-child { border-bottom:none; }
+.mp-rank { font-size:13px; font-weight:700; color:var(--dim); min-width:24px; text-align:center; }
+.mp-row:nth-child(1) .mp-rank { color:var(--accent); }
+.mp-row:nth-child(2) .mp-rank { color:#c0c0c0; }
+.mp-row:nth-child(3) .mp-rank { color:#cd7f32; }
+.mp-info { flex:1; overflow:hidden; }
+.mp-name { font-weight:600; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mp-artist { font-size:11px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mp-count { font-size:15px; font-weight:800; color:var(--accent); white-space:nowrap; flex-shrink:0; }
+.mp-count-label { font-size:10px; font-weight:500; color:var(--dim); }
+
+/* ── Milestones ──────────────────────────────────────────────────── */
+.milestones-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; }
+@media(max-width:600px){ .milestones-grid { grid-template-columns:repeat(2,1fr); } }
+.milestone { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; text-align:center; transition:all .2s; position:relative; overflow:hidden; }
+.milestone.unlocked { border-color:rgba(29,185,84,.35); }
+.milestone.unlocked::after { content:''; position:absolute; inset:0; background:radial-gradient(ellipse at 50% 0%,rgba(29,185,84,.1) 0%,transparent 70%); pointer-events:none; }
+.milestone.locked { opacity:.55; }
+.milestone:hover { transform:translateY(-2px); }
+.ms-emoji { font-size:32px; margin-bottom:6px; }
+.ms-title { font-size:13px; font-weight:700; margin-bottom:4px; }
+.ms-desc { font-size:10px; color:var(--dim); margin-bottom:10px; line-height:1.4; min-height:28px; }
+.ms-progress-bg { height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+.ms-progress-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent2)); border-radius:2px; transition:width .6s ease; }
+.ms-pct { font-size:10px; color:var(--dim); margin-top:6px; }
+.milestone.unlocked .ms-pct { color:var(--accent); font-weight:600; }
+
+/* ── Weekly Report ───────────────────────────────────────────────── */
+.change-up { color:#1DB954; font-size:11px; font-weight:600; }
+.change-down { color:#e05c5c; font-size:11px; font-weight:600; }
+.change-flat { color:var(--dim); font-size:11px; }
+
+/* ── Profile Card ────────────────────────────────────────────────── */
+.profile-card-wrap { display:flex; justify-content:center; padding:20px 0; }
+.profile-card { width:380px; background:linear-gradient(145deg, #12122a 0%, #0e0e1a 60%, #0a1a12 100%); border:1px solid rgba(29,185,84,.25); border-radius:20px; padding:28px; position:relative; overflow:hidden; }
+.profile-card::before { content:''; position:absolute; top:-60px; right:-60px; width:160px; height:160px; background:radial-gradient(circle,rgba(29,185,84,.15) 0%,transparent 70%); pointer-events:none; }
+.pc-header { text-align:center; margin-bottom:20px; }
+.pc-avatar { width:64px; height:64px; border-radius:50%; border:2px solid var(--accent); object-fit:cover; margin-bottom:10px; }
+.pc-name { font-size:20px; font-weight:800; color:var(--text); }
+.pc-subtitle { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; margin-top:2px; }
+.pc-stats { display:flex; justify-content:space-around; padding:14px 0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin-bottom:16px; }
+.pc-stat { text-align:center; }
+.pc-stat-val { font-size:20px; font-weight:800; color:var(--accent); }
+.pc-stat-label { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; }
+.pc-section { margin-bottom:14px; }
+.pc-label { font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+.pc-item { font-size:12px; color:var(--text); padding:3px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pc-footer { display:flex; justify-content:space-between; font-size:10px; color:var(--dim); padding-top:14px; border-top:1px solid var(--border); }
+
 /* ── Scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

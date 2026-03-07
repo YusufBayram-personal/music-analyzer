@@ -713,6 +713,379 @@ def api_listening_streak():
     })
 
 
+@app.route("/api/most_played")
+def api_most_played():
+    """Top tracks by play count from the database."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    if not DATABASE_URL:
+        return jsonify([])
+
+    spotify_user_id = get_or_set_user_id(token)
+    if not spotify_user_id:
+        return jsonify([])
+
+    limit = min(int(request.args.get("limit", 20)), 50)
+    try:
+        with get_db() as conn:
+            if not conn:
+                return jsonify([])
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("""
+                SELECT track_id, track_name, artist_name, album_name,
+                       COUNT(*) AS play_count,
+                       MAX(played_at) AS last_played
+                FROM play_history
+                WHERE spotify_user_id = %s
+                GROUP BY track_id, track_name, artist_name, album_name
+                ORDER BY play_count DESC
+                LIMIT %s;
+            """, (spotify_user_id, limit))
+            rows = cur.fetchall()
+            result = []
+            for row in rows:
+                result.append({
+                    "track_id": row["track_id"],
+                    "name": row["track_name"],
+                    "artist": row["artist_name"],
+                    "album": row["album_name"],
+                    "play_count": row["play_count"],
+                    "last_played": row["last_played"].isoformat() if row["last_played"] else None,
+                })
+            return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/milestones")
+def api_milestones():
+    """Listening milestones / achievements based on DB history."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    if not DATABASE_URL:
+        return jsonify([])
+
+    tz_name = request.args.get("tz", "UTC")
+    try:
+        user_tz = ZoneInfo(tz_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
+    spotify_user_id = get_or_set_user_id(token)
+    if not spotify_user_id:
+        return jsonify([])
+
+    milestones = []
+    try:
+        with get_db() as conn:
+            if not conn:
+                return jsonify([])
+            cur = conn.cursor()
+
+            # Total plays
+            cur.execute("SELECT COUNT(*) FROM play_history WHERE spotify_user_id = %s", (spotify_user_id,))
+            total_plays = cur.fetchone()[0]
+
+            play_thresholds = [
+                (50, "First Steps", "Reached 50 plays", "👶"),
+                (100, "Century Club", "Reached 100 plays", "💯"),
+                (250, "Music Lover", "Reached 250 plays", "🎶"),
+                (500, "Half K", "Reached 500 plays", "🔥"),
+                (1000, "Thousand Vibes", "Reached 1,000 plays", "🏆"),
+                (2500, "Audiophile", "Reached 2,500 plays", "🎧"),
+                (5000, "Sound Master", "Reached 5,000 plays", "👑"),
+            ]
+            for threshold, title, desc, emoji in play_thresholds:
+                milestones.append({
+                    "title": title, "desc": desc, "emoji": emoji,
+                    "target": threshold, "current": total_plays,
+                    "unlocked": total_plays >= threshold,
+                })
+
+            # Unique artists listened to
+            cur.execute("""
+                SELECT COUNT(DISTINCT artist_name) FROM play_history
+                WHERE spotify_user_id = %s
+            """, (spotify_user_id,))
+            unique_artists = cur.fetchone()[0]
+
+            artist_thresholds = [
+                (10, "Explorer", "Listened to 10 different artists", "🧭"),
+                (25, "Genre Hopper", "Listened to 25 different artists", "🌍"),
+                (50, "Music Nomad", "Listened to 50 different artists", "🗺️"),
+                (100, "World Listener", "Listened to 100 different artists", "🌐"),
+            ]
+            for threshold, title, desc, emoji in artist_thresholds:
+                milestones.append({
+                    "title": title, "desc": desc, "emoji": emoji,
+                    "target": threshold, "current": unique_artists,
+                    "unlocked": unique_artists >= threshold,
+                })
+
+            # Unique tracks listened to
+            cur.execute("""
+                SELECT COUNT(DISTINCT track_id) FROM play_history
+                WHERE spotify_user_id = %s
+            """, (spotify_user_id,))
+            unique_tracks = cur.fetchone()[0]
+
+            track_thresholds = [
+                (25, "Starter Kit", "Listened to 25 unique tracks", "🎵"),
+                (50, "Growing Library", "Listened to 50 unique tracks", "📚"),
+                (100, "Track Collector", "Listened to 100 unique tracks", "💿"),
+                (250, "DJ Material", "Listened to 250 unique tracks", "🎛️"),
+                (500, "Song Encyclopedia", "Listened to 500 unique tracks", "📖"),
+            ]
+            for threshold, title, desc, emoji in track_thresholds:
+                milestones.append({
+                    "title": title, "desc": desc, "emoji": emoji,
+                    "target": threshold, "current": unique_tracks,
+                    "unlocked": unique_tracks >= threshold,
+                })
+
+            # Listening streak (active days)
+            cur.execute("""
+                SELECT DISTINCT (played_at AT TIME ZONE %s)::DATE AS play_date
+                FROM play_history WHERE spotify_user_id = %s
+            """, (tz_name, spotify_user_id))
+            days = {row[0] for row in cur.fetchall()}
+            active_days = len(days)
+
+            day_thresholds = [
+                (3, "Regular", "Active for 3 days", "📅"),
+                (7, "One Week Wonder", "Active for 7 days", "🗓️"),
+                (14, "Two Week Streak", "Active for 14 days", "⚡"),
+                (30, "Monthly Maven", "Active for 30 days", "🌟"),
+            ]
+            for threshold, title, desc, emoji in day_thresholds:
+                milestones.append({
+                    "title": title, "desc": desc, "emoji": emoji,
+                    "target": threshold, "current": active_days,
+                    "unlocked": active_days >= threshold,
+                })
+
+            # Most played single track
+            cur.execute("""
+                SELECT track_name, COUNT(*) AS cnt FROM play_history
+                WHERE spotify_user_id = %s
+                GROUP BY track_name ORDER BY cnt DESC LIMIT 1
+            """, (spotify_user_id,))
+            top_row = cur.fetchone()
+            top_track_count = top_row[1] if top_row else 0
+            top_track_name = top_row[0] if top_row else ""
+
+            obsession_thresholds = [
+                (5, "On Repeat", f"Played '{top_track_name}' 5+ times", "🔁"),
+                (10, "Obsessed", f"Played '{top_track_name}' 10+ times", "😍"),
+                (25, "Super Fan", f"Played '{top_track_name}' 25+ times", "⭐"),
+            ]
+            for threshold, title, desc, emoji in obsession_thresholds:
+                milestones.append({
+                    "title": title, "desc": desc, "emoji": emoji,
+                    "target": threshold, "current": top_track_count,
+                    "unlocked": top_track_count >= threshold,
+                })
+
+        return jsonify(milestones)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/weekly_summary")
+def api_weekly_summary():
+    """Weekly listening summary: this week vs last week stats."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    if not DATABASE_URL:
+        return jsonify({"error": "no_database"}), 400
+
+    tz_name = request.args.get("tz", "UTC")
+    try:
+        user_tz = ZoneInfo(tz_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
+    spotify_user_id = get_or_set_user_id(token)
+    if not spotify_user_id:
+        return jsonify({"error": "no_user"}), 400
+
+    now = datetime.now(user_tz)
+    # Start of this week (Monday 00:00)
+    this_monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    last_monday = this_monday - timedelta(weeks=1)
+
+    try:
+        with get_db() as conn:
+            if not conn:
+                return jsonify({"error": "no_database"}), 400
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            def week_stats(start, end):
+                """Get stats for a given time range."""
+                cur.execute("""
+                    SELECT COUNT(*) AS total_plays,
+                           COUNT(DISTINCT track_id) AS unique_tracks,
+                           COUNT(DISTINCT artist_name) AS unique_artists
+                    FROM play_history
+                    WHERE spotify_user_id = %s
+                      AND played_at >= %s AND played_at < %s
+                """, (spotify_user_id, start, end))
+                row = cur.fetchone()
+
+                # Top track
+                cur.execute("""
+                    SELECT track_name, artist_name, COUNT(*) AS cnt
+                    FROM play_history
+                    WHERE spotify_user_id = %s
+                      AND played_at >= %s AND played_at < %s
+                    GROUP BY track_name, artist_name
+                    ORDER BY cnt DESC LIMIT 5
+                """, (spotify_user_id, start, end))
+                top_tracks = [{"name": r["track_name"], "artist": r["artist_name"], "count": r["cnt"]} for r in cur.fetchall()]
+
+                # Top artist
+                cur.execute("""
+                    SELECT artist_name, COUNT(*) AS cnt
+                    FROM play_history
+                    WHERE spotify_user_id = %s
+                      AND played_at >= %s AND played_at < %s
+                    GROUP BY artist_name
+                    ORDER BY cnt DESC LIMIT 5
+                """, (spotify_user_id, start, end))
+                top_artists = [{"name": r["artist_name"], "count": r["cnt"]} for r in cur.fetchall()]
+
+                # Hourly distribution
+                cur.execute("""
+                    SELECT EXTRACT(HOUR FROM played_at AT TIME ZONE %s)::INT AS hour,
+                           COUNT(*) AS cnt
+                    FROM play_history
+                    WHERE spotify_user_id = %s
+                      AND played_at >= %s AND played_at < %s
+                    GROUP BY hour ORDER BY hour
+                """, (tz_name, spotify_user_id, start, end))
+                hourly = {r["hour"]: r["cnt"] for r in cur.fetchall()}
+
+                # Daily distribution
+                cur.execute("""
+                    SELECT (played_at AT TIME ZONE %s)::DATE AS day,
+                           COUNT(*) AS cnt
+                    FROM play_history
+                    WHERE spotify_user_id = %s
+                      AND played_at >= %s AND played_at < %s
+                    GROUP BY day ORDER BY day
+                """, (tz_name, spotify_user_id, start, end))
+                daily = [{"date": r["day"].isoformat(), "count": r["cnt"]} for r in cur.fetchall()]
+
+                return {
+                    "total_plays": row["total_plays"],
+                    "unique_tracks": row["unique_tracks"],
+                    "unique_artists": row["unique_artists"],
+                    "top_tracks": top_tracks,
+                    "top_artists": top_artists,
+                    "hourly": [hourly.get(h, 0) for h in range(24)],
+                    "daily": daily,
+                }
+
+            this_week = week_stats(this_monday, now)
+            last_week = week_stats(last_monday, this_monday)
+
+            # Compute changes
+            def pct_change(current, previous):
+                if previous == 0:
+                    return 100 if current > 0 else 0
+                return round((current - previous) / previous * 100)
+
+            return jsonify({
+                "this_week": this_week,
+                "last_week": last_week,
+                "changes": {
+                    "plays": pct_change(this_week["total_plays"], last_week["total_plays"]),
+                    "tracks": pct_change(this_week["unique_tracks"], last_week["unique_tracks"]),
+                    "artists": pct_change(this_week["unique_artists"], last_week["unique_artists"]),
+                },
+                "period": {
+                    "this_start": this_monday.isoformat(),
+                    "last_start": last_monday.isoformat(),
+                },
+            })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/profile_card")
+def api_profile_card():
+    """Aggregated profile data for a shareable card."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+
+    tz_name = request.args.get("tz", "UTC")
+    spotify_user_id = get_or_set_user_id(token)
+
+    profile = spotify_get("/me", token)
+    result = {
+        "display_name": profile.get("display_name") or profile.get("id"),
+        "image": profile["images"][0]["url"] if profile.get("images") else None,
+        "top_tracks": [],
+        "top_artists": [],
+        "top_genre": None,
+        "total_plays": 0,
+        "active_days": 0,
+        "streak": 0,
+    }
+
+    # Top tracks & artists
+    try:
+        tracks = spotify_get("/me/top/tracks", token, params={"limit": 5, "time_range": "short_term"})
+        result["top_tracks"] = [{"name": t["name"], "artist": t["artists"][0]["name"]} for t in tracks.get("items", [])]
+    except Exception:
+        pass
+
+    try:
+        artists = spotify_get("/me/top/artists", token, params={"limit": 5, "time_range": "short_term"})
+        result["top_artists"] = [a["name"] for a in artists.get("items", [])]
+        # Top genre from top artist
+        if artists.get("items") and artists["items"][0].get("genres"):
+            result["top_genre"] = artists["items"][0]["genres"][0]
+    except Exception:
+        pass
+
+    # DB stats
+    if DATABASE_URL and spotify_user_id:
+        try:
+            with get_db() as conn:
+                if conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT COUNT(*) FROM play_history WHERE spotify_user_id = %s", (spotify_user_id,))
+                    result["total_plays"] = cur.fetchone()[0]
+
+                    cur.execute("""
+                        SELECT DISTINCT (played_at AT TIME ZONE %s)::DATE
+                        FROM play_history WHERE spotify_user_id = %s
+                    """, (tz_name, spotify_user_id))
+                    days = {row[0] for row in cur.fetchall()}
+                    result["active_days"] = len(days)
+
+                    try:
+                        user_tz = ZoneInfo(tz_name)
+                    except Exception:
+                        user_tz = ZoneInfo("UTC")
+                    today = datetime.now(user_tz).date()
+                    streak = 0
+                    check = today
+                    while check in days:
+                        streak += 1
+                        check -= timedelta(days=1)
+                    result["streak"] = streak
+        except Exception:
+            pass
+
+    return jsonify(result)
+
+
 @app.route("/api/mood_scatter")
 def api_mood_scatter():
     """Returns valence + energy per track for mood quadrant scatter plot."""
