@@ -487,5 +487,28 @@ async function loadTimeline(){
   }).join('');
 }
 
+/* ── Sync button ──────────────────────────────────────────────────── */
+(function(){
+  const syncBtn    = $('#sync-btn');
+  const syncStatus = $('#sync-status');
+  if(!syncBtn) return;
+
+  syncBtn.addEventListener('click', async () => {
+    syncBtn.disabled = true;
+    syncStatus.textContent = 'Syncing…';
+    syncStatus.style.color = '#6b6b8a';
+    try {
+      const result = await api('/api/sync');
+      syncStatus.textContent = `+${result.new_tracks} new · ${result.total_stored} total`;
+      syncStatus.style.color = '#1DB954';
+    } catch(e) {
+      syncStatus.textContent = 'Sync failed';
+      syncStatus.style.color = '#e05c5c';
+    } finally {
+      syncBtn.disabled = false;
+    }
+  });
+})();
+
 /* ── Init ─────────────────────────────────────────────────────────── */
 initDashboard();
