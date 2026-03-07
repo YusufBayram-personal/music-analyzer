@@ -167,9 +167,16 @@ init_db()
 
 # ── Spotify helpers ───────────────────────────────────────────────────────────
 
+class SpotifyDeprecatedError(Exception):
+    """Raised when Spotify returns 403 on a deprecated endpoint."""
+    pass
+
+
 def spotify_get(endpoint, token, params=None):
     headers = {"Authorization": f"Bearer {token}"}
     resp = requests.get(f"{API_BASE}{endpoint}", headers=headers, params=params)
+    if resp.status_code == 403 and "audio-features" in endpoint:
+        raise SpotifyDeprecatedError("audio-features endpoint is deprecated for this app")
     resp.raise_for_status()
     return resp.json()
 
@@ -492,7 +499,11 @@ def api_audio_features():
     if not ids:
         return jsonify({})
 
-    feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
+    try:
+        feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
+    except SpotifyDeprecatedError:
+        return jsonify({"error": "deprecated"}), 403
+
     features = feat_data.get("audio_features") or []
     valid = [f for f in features if f]
 
@@ -599,7 +610,10 @@ def api_mood_scatter():
     ids = [t["id"] for t in top.get("items", [])]
     if not ids:
         return jsonify([])
-    feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
+    try:
+        feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
+    except SpotifyDeprecatedError:
+        return jsonify({"error": "deprecated"}), 403
     feats = feat_data.get("audio_features") or []
     tracks = top.get("items", [])
     result = []
@@ -627,7 +641,10 @@ def api_personality():
     ids = [t["id"] for t in top.get("items", [])]
     if not ids:
         return jsonify({"type": "Unknown", "desc": "", "emoji": "🎵", "scores": {}})
-    feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
+    try:
+        feat_data = spotify_get("/audio-features", token, params={"ids": ",".join(ids)})
+    except SpotifyDeprecatedError:
+        return jsonify({"error": "deprecated"}), 403
     valid = [f for f in (feat_data.get("audio_features") or []) if f]
     if not valid:
         return jsonify({"type": "Unknown", "desc": "", "emoji": "🎵", "scores": {}})

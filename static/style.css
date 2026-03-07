@@ -180,6 +180,12 @@ canvas { position: relative; z-index: 1; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loader p { font-size: 13px; color: var(--dim); }
 
+/* ── Deprecated notice ────────────────────────────────────────────── */
+.deprecated-notice { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 60px 24px; text-align: center; color: var(--dim); }
+.deprecated-icon { font-size: 48px; }
+.deprecated-notice strong { font-size: 18px; color: var(--text); }
+.deprecated-notice p { font-size: 13px; max-width: 380px; line-height: 1.6; }
+
 /* ── Sync button ──────────────────────────────────────────────────── */
 .sync-wrap { display: flex; align-items: center; gap: 8px; }
 .btn-sync { background: rgba(29,185,84,.12); border: 1px solid rgba(29,185,84,.35); color: var(--accent); padding: 5px 13px; border-radius: 20px; cursor: pointer; font-size: 12px; font-weight: 600; transition: background .2s, transform .1s; }

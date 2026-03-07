@@ -8,8 +8,23 @@ function showLoader(on){ $('#loader').classList.toggle('show', on); }
 
 async function api(path){
   const r = await fetch(path);
+  if(r.status === 403){
+    const data = await r.json().catch(() => ({}));
+    if(data.error === 'deprecated') throw new DeprecatedError();
+  }
   if(!r.ok) throw new Error(`${path} → ${r.status}`);
   return r.json();
+}
+
+class DeprecatedError extends Error { constructor(){ super('deprecated'); } }
+
+function deprecatedNotice(containerId){
+  const el = document.getElementById(containerId);
+  if(el) el.innerHTML = `<div class="deprecated-notice">
+    <span class="deprecated-icon">🚫</span>
+    <strong>Feature unavailable</strong>
+    <p>Spotify removed access to audio analysis data for apps created after November 2024. This feature is no longer available.</p>
+  </div>`;
 }
 
 /* ── Animated counter ─────────────────────────────────────────────── */
@@ -138,10 +153,16 @@ function buildRecentList(items){
 
 /* ── Personality ──────────────────────────────────────────────────── */
 async function loadPersonality(){
-  const [p, decades] = await Promise.all([
-    api('/api/personality'),
-    api('/api/decade_breakdown'),
-  ]);
+  let p, decades;
+  try {
+    [p, decades] = await Promise.all([
+      api('/api/personality'),
+      api('/api/decade_breakdown'),
+    ]);
+  } catch(e) {
+    if(e instanceof DeprecatedError) { deprecatedNotice('tab-personality'); return; }
+    throw e;
+  }
 
   $('#p-emoji').textContent = p.emoji || '🎵';
   $('#p-type').textContent  = p.type  || '—';
@@ -356,10 +377,16 @@ const FEAT_META = {
 let radarChart = null, moodAudioChart = null;
 
 async function loadAudio(){
-  const [feat, scatter] = await Promise.all([
-    api('/api/audio_features'),
-    api('/api/mood_scatter?time_range=short_term'),
-  ]);
+  let feat, scatter;
+  try {
+    [feat, scatter] = await Promise.all([
+      api('/api/audio_features'),
+      api('/api/mood_scatter?time_range=short_term'),
+    ]);
+  } catch(e) {
+    if(e instanceof DeprecatedError) { deprecatedNotice('tab-audio'); return; }
+    throw e;
+  }
 
   if(!feat || !Object.keys(feat).length) return;
 
