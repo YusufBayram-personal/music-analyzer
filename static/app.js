@@ -128,6 +128,9 @@ async function initDashboard(){
 
     // Load milestones (non-blocking)
     api(`/api/milestones?tz=${tz}`).then(buildMilestones).catch(()=>{});
+
+    // Load listening personality (non-blocking)
+    api(`/api/listening_personality?tz=${tz}`).then(buildListeningPersonality).catch(()=>{});
   } catch(e){ console.error(e); }
   showLoader(false);
 }
@@ -376,6 +379,12 @@ async function loadTopArtists(range){
       <div class="c-followers">${fmtNum(a.followers)} followers</div>
       <div class="pop-bar"><div class="pop-fill" style="width:${a.popularity}%"></div></div>
     </div>`).join('');
+
+  // Load artist flow once (non-blocking)
+  if(!afLoaded){
+    afLoaded = true;
+    api('/api/artist_flow').then(buildArtistFlow).catch(()=>{});
+  }
 }
 
 $('#tab-topartists').addEventListener('click', e => {
@@ -581,6 +590,226 @@ function buildMilestones(milestones){
   }).join('');
 }
 
+/* ── Listening Personality ────────────────────────────────────────── */
+let lpChart = null;
+
+function buildListeningPersonality(data){
+  const section = $('#listening-personality-section');
+  if(!section) return;
+  if(!data || data.type === 'Unknown'){
+    section.style.display = 'none';
+    return;
+  }
+
+  $('#lp-emoji').textContent = data.emoji || '🎵';
+  $('#lp-type').textContent = data.type || '—';
+  $('#lp-desc').textContent = data.desc || '';
+  if(data.fun_stat) $('#lp-fun').textContent = data.fun_stat;
+
+  // Doughnut chart of 4 time blocks
+  if(data.blocks && Object.keys(data.blocks).length){
+    const labels = Object.keys(data.blocks);
+    const values = Object.values(data.blocks);
+    const colors = ['#f59e0b','#ef4444','#8b5cf6','#3b82f6'];
+
+    if(lpChart){ lpChart.destroy(); lpChart=null; }
+    lpChart = new Chart($('#lp-chart').getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: colors,
+          borderColor: '#0e0e1a',
+          borderWidth: 3,
+          hoverOffset: 8,
+        }]
+      },
+      options: {
+        responsive: true,
+        cutout: '55%',
+        plugins: {
+          legend: { position:'bottom', labels:{color:'#eeeef5', font:{size:11}, padding:12, boxWidth:12} }
+        }
+      }
+    });
+  }
+}
+
+/* ── Artist Flow ─────────────────────────────────────────────────── */
+let afChart = null;
+let afLoaded = false;
+
+function buildArtistFlow(data){
+  const section = $('#artist-flow-section');
+  if(!section) return;
+  if(!data || !data.transitions || !data.transitions.length){
+    section.style.display = 'none';
+    return;
+  }
+
+  // Horizontal bar chart: top 10 transitions
+  const top10 = data.transitions.slice(0, 10);
+  const labels = top10.map(t => `${t.from} → ${t.to}`);
+  const values = top10.map(t => t.count);
+
+  if(afChart){ afChart.destroy(); afChart=null; }
+  afChart = new Chart($('#af-chart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Transitions',
+        data: values,
+        backgroundColor: 'rgba(139,92,246,.5)',
+        borderColor: '#8b5cf6',
+        borderWidth: 1,
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend:{display:false} },
+      scales: {
+        x: { beginAtZero:true, ticks:{font:{size:10}} },
+        y: { ticks:{font:{size:11}, color:'#eeeef5'} }
+      }
+    }
+  });
+
+  // Transition list (all 15)
+  const listEl = $('#af-list');
+  if(listEl){
+    listEl.innerHTML = data.transitions.map((t,i) => `
+      <div class="af-row">
+        <span class="af-rank">${i+1}</span>
+        <span class="af-from">${esc(t.from)}</span>
+        <span class="af-arrow">→</span>
+        <span class="af-to">${esc(t.to)}</span>
+        <span class="af-count">${t.count}×</span>
+      </div>`).join('');
+  }
+}
+
+/* ── Discovery Rate ──────────────────────────────────────────────── */
+let drChart = null;
+
+function buildDiscoveryRate(data){
+  const section = $('#discovery-section');
+  if(!section) return;
+  if(!data || !data.weeks || !data.weeks.length){
+    section.style.display = 'none';
+    return;
+  }
+
+  // Stat cards
+  const stats = data.stats || {};
+  $('#dr-stats').innerHTML = `
+    <div class="stat-grid" style="margin-bottom:0">
+      <div class="stat-card"><div class="stat-icon">🎵</div><div class="stat-value">${stats.total_unique_tracks || 0}</div><div class="stat-label">Unique Tracks</div></div>
+      <div class="stat-card"><div class="stat-icon">🎤</div><div class="stat-value">${stats.total_unique_artists || 0}</div><div class="stat-label">Unique Artists</div></div>
+      <div class="stat-card"><div class="stat-icon">🔍</div><div class="stat-value">${stats.discovery_ratio || 0}%</div><div class="stat-label">Discovery Ratio</div></div>
+      <div class="stat-card"><div class="stat-icon">▶️</div><div class="stat-value">${stats.total_plays || 0}</div><div class="stat-label">Total Plays</div></div>
+    </div>`;
+
+  // Line chart: new tracks vs replays per week
+  const weeks = data.weeks;
+  const labels = weeks.map(w => {
+    const d = new Date(w.week + 'T00:00:00');
+    return d.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+  });
+
+  if(drChart){ drChart.destroy(); drChart=null; }
+  drChart = new Chart($('#dr-chart').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'New Tracks',
+          data: weeks.map(w => w.new_tracks),
+          borderColor: '#1DB954',
+          backgroundColor: 'rgba(29,185,84,.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+        },
+        {
+          label: 'Replays',
+          data: weeks.map(w => w.replays),
+          borderColor: '#8b5cf6',
+          backgroundColor: 'rgba(139,92,246,.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels:{color:'#eeeef5', font:{size:11}} }
+      },
+      scales: {
+        x: { ticks:{font:{size:10}, maxRotation:45} },
+        y: { beginAtZero:true, ticks:{font:{size:10}} }
+      }
+    }
+  });
+}
+
+/* ── Album Art Collage ───────────────────────────────────────────── */
+function buildAlbumCollage(albums){
+  const section = $('#collage-section');
+  if(!section) return;
+  if(!albums || !albums.length){
+    section.style.display = 'none';
+    return;
+  }
+
+  const grid = $('#collage-grid');
+  grid.innerHTML = albums.map(a => `
+    <div class="collage-item">
+      <img src="${esc(a.image)}" alt="${esc(a.name)}" crossorigin="anonymous" loading="lazy"/>
+      <div class="collage-overlay">
+        <div class="collage-name">${esc(a.name)}</div>
+        <div class="collage-artist">${esc(a.artist)}</div>
+      </div>
+    </div>`).join('');
+
+  // Download handler
+  const btn = $('#download-collage-btn');
+  if(btn){
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+    newBtn.addEventListener('click', async () => {
+      if(typeof html2canvas === 'undefined') return;
+      newBtn.disabled = true;
+      newBtn.textContent = 'Generating…';
+      try {
+        const canvas = await html2canvas(grid, {
+          backgroundColor: '#0e0e1a',
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+        const link = document.createElement('a');
+        link.download = 'album-collage.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      } catch(e){ console.error('Collage export:', e); }
+      newBtn.disabled = false;
+      newBtn.textContent = 'Download Collage';
+    });
+  }
+}
+
 /* ── Weekly Report ───────────────────────────────────────────────── */
 let weeklyDailyChart = null, weeklyHourlyChart = null;
 
@@ -673,6 +902,12 @@ async function loadWeekly(){
 
   // Load profile card
   loadProfileCard();
+
+  // Load discovery rate (non-blocking)
+  api(`/api/discovery_rate?tz=${tz}`).then(buildDiscoveryRate).catch(()=>{});
+
+  // Load album collage (non-blocking)
+  api('/api/top_albums').then(buildAlbumCollage).catch(()=>{});
 }
 
 /* ── Profile Card ────────────────────────────────────────────────── */

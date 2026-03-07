@@ -112,6 +112,21 @@
       <div class="card-title-row"><h2>Milestones</h2><span class="badge">Your achievements</span></div>
       <div class="milestones-grid" id="milestones-grid"></div>
     </div>
+    <!-- Listening Personality -->
+    <div class="glass-card full" style="margin-top:20px" id="listening-personality-section">
+      <div class="card-title-row"><h2>Listening Personality</h2><span class="badge">When you listen</span></div>
+      <div class="lp-wrap" id="lp-wrap">
+        <div class="lp-card" id="lp-card">
+          <div class="lp-emoji" id="lp-emoji">🎵</div>
+          <div class="lp-type" id="lp-type">Analyzing…</div>
+          <div class="lp-desc" id="lp-desc"></div>
+          <div class="lp-fun" id="lp-fun"></div>
+        </div>
+        <div class="lp-chart-wrap">
+          <canvas id="lp-chart" height="240"></canvas>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- PERSONALITY -->
@@ -209,6 +224,17 @@
       </div>
       <div class="artists-grid" id="artists-grid"></div>
     </div>
+    {% if db_configured %}
+    <div class="glass-card full" style="margin-top:20px" id="artist-flow-section">
+      <div class="card-title-row"><h2>Artist Flow</h2><span class="badge">How you transition between artists</span></div>
+      <div class="af-wrap">
+        <div class="af-chart-wrap">
+          <canvas id="af-chart" height="320"></canvas>
+        </div>
+        <div class="af-list" id="af-list"></div>
+      </div>
+    </div>
+    {% endif %}
   </section>
 
   <!-- AUDIO DNA -->
@@ -290,6 +316,19 @@
           <div id="weekly-artists"></div>
         </div>
       </div>
+    </div>
+    <!-- Discovery Rate -->
+    <div class="glass-card full" style="margin-top:20px" id="discovery-section">
+      <div class="card-title-row"><h2>Discovery Rate</h2><span class="badge">New vs Replayed</span></div>
+      <div class="dr-stats" id="dr-stats"></div>
+      <div style="margin-top:16px">
+        <canvas id="dr-chart" height="220"></canvas>
+      </div>
+    </div>
+    <!-- Album Art Collage -->
+    <div class="glass-card full" style="margin-top:20px" id="collage-section">
+      <div class="card-title-row"><h2>Album Art Collage</h2><button class="btn-sm" id="download-collage-btn">Download Collage</button></div>
+      <div class="collage-grid" id="collage-grid"></div>
     </div>
     <!-- Profile Card -->
     <div class="glass-card full" style="margin-top:20px">

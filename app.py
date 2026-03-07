@@ -713,6 +713,220 @@ def api_listening_streak():
     })
 
 
+@app.route("/api/listening_personality")
+def api_listening_personality():
+    """Classify user as Night Owl, Early Bird, etc. based on listening hours."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+
+    tz_name = request.args.get("tz", "UTC")
+    try:
+        user_tz = ZoneInfo(tz_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
+    spotify_user_id = get_or_set_user_id(token)
+    hourly = [0] * 24
+
+    if DATABASE_URL and spotify_user_id:
+        try:
+            with get_db() as conn:
+                if conn:
+                    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                    cur.execute("""
+                        SELECT EXTRACT(HOUR FROM played_at AT TIME ZONE %s)::INT AS hour,
+                               COUNT(*) AS cnt
+                        FROM play_history
+                        WHERE spotify_user_id = %s
+                        GROUP BY hour ORDER BY hour
+                    """, (tz_name, spotify_user_id))
+                    for row in cur.fetchall():
+                        hourly[row["hour"]] = row["cnt"]
+        except Exception:
+            pass
+
+    # Fallback to Spotify
+    if sum(hourly) == 0:
+        try:
+            data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
+            for item in data.get("items", []):
+                dt = datetime.strptime(item["played_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+                dt = dt.replace(tzinfo=timezone.utc).astimezone(user_tz)
+                hourly[dt.hour] += 1
+        except Exception:
+            pass
+
+    total = sum(hourly)
+    if total == 0:
+        return jsonify({"type": "Unknown", "emoji": "🎵", "desc": "Not enough data yet.", "blocks": {}, "hourly": hourly, "fun_stat": ""})
+
+    blocks = {
+        "Morning (5-11)": sum(hourly[5:12]),
+        "Afternoon (12-16)": sum(hourly[12:17]),
+        "Evening (17-21)": sum(hourly[17:22]),
+        "Night (22-4)": sum(hourly[22:]) + sum(hourly[:5]),
+    }
+
+    dominant = max(blocks, key=blocks.get)
+    pct = round(blocks[dominant] / total * 100)
+
+    personalities = {
+        "Morning (5-11)": ("Early Bird", "🐦", "You start your day with music! Your peak listening is in the morning hours."),
+        "Afternoon (12-16)": ("Afternoon Listener", "☀️", "Your music peaks in the afternoon — the perfect midday soundtrack."),
+        "Evening (17-21)": ("Evening Vibes", "🌆", "You wind down with music in the evening — golden hour, golden tunes."),
+        "Night (22-4)": ("Night Owl", "🦉", "You come alive after dark — most of your listening happens late at night."),
+    }
+
+    ptype, emoji, desc = personalities[dominant]
+    peak_hour = hourly.index(max(hourly))
+    fun_stat = f"{pct}% of your listening happens during {dominant.lower()}. Peak hour: {peak_hour}:00"
+
+    return jsonify({
+        "type": ptype, "emoji": emoji, "desc": desc,
+        "blocks": blocks, "hourly": hourly, "fun_stat": fun_stat,
+    })
+
+
+@app.route("/api/artist_flow")
+def api_artist_flow():
+    """Show how user transitions between artists in consecutive plays."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    if not DATABASE_URL:
+        return jsonify({"transitions": [], "artists": []})
+
+    spotify_user_id = get_or_set_user_id(token)
+    if not spotify_user_id:
+        return jsonify({"transitions": [], "artists": []})
+
+    try:
+        with get_db() as conn:
+            if not conn:
+                return jsonify({"transitions": [], "artists": []})
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("""
+                SELECT artist_name FROM play_history
+                WHERE spotify_user_id = %s
+                ORDER BY played_at ASC
+            """, (spotify_user_id,))
+            rows = cur.fetchall()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    transitions = defaultdict(int)
+    artist_counts = defaultdict(int)
+    prev_artist = None
+
+    for row in rows:
+        artist = row["artist_name"]
+        artist_counts[artist] += 1
+        if prev_artist and prev_artist != artist:
+            transitions[(prev_artist, artist)] += 1
+        prev_artist = artist
+
+    sorted_trans = sorted(transitions.items(), key=lambda x: x[1], reverse=True)[:15]
+    top_artists = sorted(artist_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    return jsonify({
+        "transitions": [{"from": k[0], "to": k[1], "count": v} for k, v in sorted_trans],
+        "artists": [{"name": a, "count": c} for a, c in top_artists],
+    })
+
+
+@app.route("/api/discovery_rate")
+def api_discovery_rate():
+    """Track new vs replayed tracks per week over time."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+    if not DATABASE_URL:
+        return jsonify({"error": "no_database"}), 400
+
+    tz_name = request.args.get("tz", "UTC")
+    spotify_user_id = get_or_set_user_id(token)
+    if not spotify_user_id:
+        return jsonify({"error": "no_user"}), 400
+
+    try:
+        with get_db() as conn:
+            if not conn:
+                return jsonify({"error": "no_database"}), 400
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("""
+                SELECT track_id, artist_name,
+                       DATE_TRUNC('week', played_at AT TIME ZONE %s)::DATE AS week_start
+                FROM play_history
+                WHERE spotify_user_id = %s
+                ORDER BY played_at ASC
+            """, (tz_name, spotify_user_id))
+            rows = cur.fetchall()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    seen_tracks = set()
+    seen_artists = set()
+    weekly = defaultdict(lambda: {"new_tracks": 0, "replays": 0, "new_artists": 0, "total": 0})
+
+    for row in rows:
+        week = row["week_start"].isoformat()
+        weekly[week]["total"] += 1
+
+        if row["track_id"] not in seen_tracks:
+            seen_tracks.add(row["track_id"])
+            weekly[week]["new_tracks"] += 1
+        else:
+            weekly[week]["replays"] += 1
+
+        if row["artist_name"] not in seen_artists:
+            seen_artists.add(row["artist_name"])
+            weekly[week]["new_artists"] += 1
+
+    sorted_weeks = sorted(weekly.items())
+    total_plays = sum(w["total"] for _, w in sorted_weeks)
+    discovery_ratio = round(len(seen_tracks) / total_plays * 100) if total_plays else 0
+
+    return jsonify({
+        "weeks": [{"week": w, **data} for w, data in sorted_weeks],
+        "stats": {
+            "total_unique_tracks": len(seen_tracks),
+            "total_unique_artists": len(seen_artists),
+            "total_plays": total_plays,
+            "discovery_ratio": discovery_ratio,
+        }
+    })
+
+
+@app.route("/api/top_albums")
+def api_top_albums():
+    """Top albums from user's top tracks with cover art."""
+    token = get_valid_token()
+    if not token:
+        return jsonify({"error": "not_authenticated"}), 401
+
+    data = spotify_get("/me/top/tracks", token, params={"limit": 50, "time_range": "short_term"})
+    seen = set()
+    albums = []
+    for item in data.get("items", []):
+        album = item["album"]
+        album_id = album["id"]
+        if album_id in seen:
+            continue
+        seen.add(album_id)
+        if album.get("images"):
+            albums.append({
+                "id": album_id,
+                "name": album["name"],
+                "artist": ", ".join(a["name"] for a in item["artists"]),
+                "image": album["images"][0]["url"],
+            })
+        if len(albums) >= 16:
+            break
+
+    return jsonify(albums)
+
+
 @app.route("/api/most_played")
 def api_most_played():
     """Top tracks by play count from the database."""
