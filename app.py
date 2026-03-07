@@ -24,6 +24,7 @@ CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:5000/callback").strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "")
+ADMIN_USER_ID = "31auxhnhp5cqfegpytr3qxeisdbm"
 
 AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -401,12 +402,18 @@ def logout():
 
 # ── API endpoints ─────────────────────────────────────────────────────────────
 
+def is_admin():
+    return session.get("spotify_user_id") == ADMIN_USER_ID
+
+
 @app.route("/api/profile")
 def api_profile():
     token = get_valid_token()
     if not token:
         return jsonify({"error": "not_authenticated"}), 401
-    return jsonify(spotify_get("/me", token))
+    data = spotify_get("/me", token)
+    data["is_admin"] = is_admin()
+    return jsonify(data)
 
 
 @app.route("/api/recent")
@@ -833,6 +840,87 @@ def api_decade_breakdown():
             decades[decade] += 1
     sorted_d = sorted(decades.items())
     return jsonify([{"decade": f"{d}s", "count": c} for d, c in sorted_d])
+
+
+# ── Admin endpoints ────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/users")
+def api_admin_users():
+    """List all users with play counts. Admin only."""
+    if not is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    if not DATABASE_URL:
+        return jsonify([])
+    try:
+        with get_db() as conn:
+            if not conn:
+                return jsonify([])
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("""
+                SELECT u.spotify_id, u.display_name, u.created_at,
+                       COUNT(p.id) AS play_count
+                FROM users u
+                LEFT JOIN play_history p ON p.spotify_user_id = u.spotify_id
+                GROUP BY u.spotify_id
+                ORDER BY u.created_at DESC;
+            """)
+            users = cur.fetchall()
+            for u in users:
+                if u["created_at"]:
+                    u["created_at"] = u["created_at"].isoformat()
+            return jsonify(users)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/heatmap/<spotify_id>")
+def api_admin_heatmap(spotify_id):
+    """View any user's heatmap. Admin only."""
+    if not is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    if not DATABASE_URL:
+        return jsonify([])
+
+    tz_name = request.args.get("tz", "UTC")
+    try:
+        user_tz = ZoneInfo(tz_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
+    grid = defaultdict(int)
+    tracks_by_slot = defaultdict(list)
+    try:
+        with get_db() as conn:
+            if not conn:
+                return jsonify([])
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("""
+                SELECT track_name, played_at
+                FROM play_history
+                WHERE spotify_user_id = %s
+                ORDER BY played_at DESC;
+            """, (spotify_id,))
+            for row in cur.fetchall():
+                dt = row["played_at"]
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.astimezone(user_tz)
+                day = dt.weekday()
+                hour = dt.hour
+                grid[(day, hour)] += 1
+                tracks_by_slot[(day, hour)].append(row["track_name"])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    result = []
+    for (day, hour), count in grid.items():
+        result.append({
+            "day": day,
+            "hour": hour,
+            "count": count,
+            "tracks": tracks_by_slot[(day, hour)][:3],
+        })
+    return jsonify(result)
 
 
 # ── Background sync (APScheduler) ─────────────────────────────────────────────

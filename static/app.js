@@ -80,6 +80,7 @@ async function loadTab(tab){
       case 'audio':       await loadAudio(); break;
       case 'genres':      await loadGenres('short_term'); break;
       case 'timeline':    await loadTimeline(); break;
+      case 'admin':       await loadAdmin(); break;
     }
   } catch(e){ console.error(e); }
   showLoader(false);
@@ -105,6 +106,12 @@ async function initDashboard(){
     $('#profile-chip').classList.remove('hidden');
     $('#username').textContent = profile.display_name || profile.id;
     if(profile.images?.[0]) $('#avatar').src = profile.images[0].url;
+
+    // Show admin tab if user is admin
+    if(profile.is_admin){
+      const adminTab = $('#admin-tab');
+      if(adminTab) adminTab.classList.remove('hidden');
+    }
 
     // Animated stats
     animCount($('#streak-val'), streak.streak);
@@ -527,6 +534,83 @@ async function loadTimeline(){
       </div>
     </div>`;
   }).join('');
+}
+
+/* ── Admin ────────────────────────────────────────────────────────── */
+async function loadAdmin(){
+  const users = await api('/api/admin/users');
+  $('#admin-user-count').textContent = users.length;
+  const container = $('#admin-users');
+  container.innerHTML = users.map(u => {
+    const date = u.created_at ? new Date(u.created_at).toLocaleDateString() : '';
+    return `<div class="admin-user-row" data-uid="${esc(u.spotify_id)}">
+      <div class="admin-user-info">
+        <strong>${esc(u.display_name || u.spotify_id)}</strong>
+        <span class="admin-user-meta">${esc(u.spotify_id)} · ${u.play_count} plays · joined ${date}</span>
+      </div>
+      <button class="btn-sm" data-uid="${esc(u.spotify_id)}" data-name="${esc(u.display_name || u.spotify_id)}">View Heatmap</button>
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('.btn-sm').forEach(btn => {
+    btn.addEventListener('click', () => loadAdminHeatmap(btn.dataset.uid, btn.dataset.name));
+  });
+}
+
+async function loadAdminHeatmap(uid, name){
+  showLoader(true);
+  try {
+    const data = await api(`/api/admin/heatmap/${uid}?tz=${encodeURIComponent(USER_TZ)}`);
+    const card = $('#admin-heatmap-card');
+    card.classList.remove('hidden');
+    $('#admin-heatmap-title').textContent = `${name}'s Heatmap`;
+
+    // X labels
+    $('#admin-heatmap-x').innerHTML = Array.from({length:24},(_,h) =>
+      `<span>${h%6===0?h:''}</span>`).join('');
+
+    // Y labels
+    $('#admin-heatmap-y').innerHTML = DAYS.map(d => `<span>${d}</span>`).join('');
+
+    const grid = $('#admin-heatmap-grid');
+    grid.innerHTML = '';
+    const map = {};
+    let maxC = 1;
+    data.forEach(({day,hour,count,tracks}) => {
+      map[`${day}-${hour}`] = {count,tracks};
+      if(count > maxC) maxC = count;
+    });
+
+    const tip = $('#hm-tooltip');
+    for(let day=0; day<7; day++){
+      for(let hour=0; hour<24; hour++){
+        const entry = map[`${day}-${hour}`];
+        const count = entry?.count || 0;
+        const ratio = count/maxC;
+        const size  = count>0 ? Math.max(8, Math.round(ratio*22)) : 4;
+        const op    = count>0 ? 0.2 + ratio*0.8 : 0.07;
+
+        const cell = document.createElement('div');
+        cell.className = 'hm-cell';
+        const dot = document.createElement('div');
+        dot.className = 'hm-dot';
+        dot.style.cssText = `width:${size}px;height:${size}px;opacity:${op.toFixed(2)};${count>0&&ratio>.6?`box-shadow:0 0 ${Math.round(ratio*12)}px rgba(29,185,84,.6);`:''}`;
+        cell.appendChild(dot);
+
+        if(count>0){
+          cell.addEventListener('mousemove', e => {
+            tip.innerHTML = `<strong>${DAYS[day]} ${String(hour).padStart(2,'0')}:00</strong><br>${count} play${count>1?'s':''}<br><em style="color:#6b6b8a">${(entry.tracks||[]).join(', ')}</em>`;
+            tip.classList.add('show');
+            tip.style.left = `${e.clientX+14}px`;
+            tip.style.top  = `${e.clientY+14}px`;
+          });
+          cell.addEventListener('mouseleave', () => tip.classList.remove('show'));
+        }
+        grid.appendChild(cell);
+      }
+    }
+  } catch(e){ console.error(e); }
+  showLoader(false);
 }
 
 /* ── Sync button ──────────────────────────────────────────────────── */

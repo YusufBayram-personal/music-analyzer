@@ -194,6 +194,16 @@ canvas { position: relative; z-index: 1; }
 .btn-sync:disabled { opacity: .45; cursor: default; }
 .sync-status { font-size: 11px; color: var(--dim); white-space: nowrap; }
 
+/* ── Admin ────────────────────────────────────────────────────────── */
+.admin-user-row { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border); }
+.admin-user-row:last-child { border-bottom:none; }
+.admin-user-info { display:flex; flex-direction:column; gap:2px; }
+.admin-user-info strong { color:var(--text); font-size:14px; }
+.admin-user-meta { color:var(--dim); font-size:11px; }
+.btn-sm { background:var(--accent); color:#000; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; transition:opacity .2s; }
+.btn-sm:hover { opacity:.85; }
+#admin-tab { color:var(--accent); font-weight:600; }
+
 /* ── Scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

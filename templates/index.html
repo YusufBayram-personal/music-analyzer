@@ -51,6 +51,7 @@
       <button class="tab" data-tab="audio">Audio DNA</button>
       <button class="tab" data-tab="genres">Genres</button>
       <button class="tab" data-tab="timeline">Timeline</button>
+      <button class="tab hidden" data-tab="admin" id="admin-tab">Admin</button>
     </nav>
     <div class="header-right">
       <div class="sync-wrap">
@@ -248,6 +249,24 @@
     <div class="glass-card full">
       <div class="card-title-row"><h2>Listening Timeline</h2><span class="badge">Last 50 plays</span></div>
       <div class="timeline" id="timeline"></div>
+    </div>
+  </section>
+
+  <!-- ADMIN -->
+  <section class="tab-content hidden" id="tab-admin">
+    <div class="glass-card full">
+      <div class="card-title-row"><h2>Users</h2><span class="badge" id="admin-user-count">0</span></div>
+      <div class="admin-users" id="admin-users"></div>
+    </div>
+    <div class="glass-card full hidden" id="admin-heatmap-card">
+      <div class="card-title-row"><h2 id="admin-heatmap-title">Heatmap</h2></div>
+      <div class="heatmap-wrap">
+        <div class="heatmap-y-labels" id="admin-heatmap-y"></div>
+        <div>
+          <div class="heatmap-grid" id="admin-heatmap-grid"></div>
+          <div class="heatmap-x-labels" id="admin-heatmap-x"></div>
+        </div>
+      </div>
     </div>
   </section>
 
