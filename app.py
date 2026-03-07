@@ -1,7 +1,8 @@
 import os
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from collections import defaultdict
 from urllib.parse import urlencode
 from contextlib import contextmanager
@@ -481,6 +482,13 @@ def api_weekly_heatmap():
     if not token:
         return jsonify({"error": "not_authenticated"}), 401
 
+    # Use client timezone for correct day/hour bucketing
+    tz_name = request.args.get("tz", "UTC")
+    try:
+        user_tz = ZoneInfo(tz_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
     spotify_user_id = get_or_set_user_id(token)
     grid = defaultdict(int)
     tracks_by_slot = defaultdict(list)
@@ -500,6 +508,9 @@ def api_weekly_heatmap():
                     """, (spotify_user_id,))
                     for row in cur.fetchall():
                         dt = row["played_at"]   # psycopg2 returns a datetime object
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        dt = dt.astimezone(user_tz)
                         day = dt.weekday()
                         hour = dt.hour
                         grid[(day, hour)] += 1
@@ -515,6 +526,7 @@ def api_weekly_heatmap():
             data = spotify_get("/me/player/recently-played", token, params={"limit": 50})
             for item in data.get("items", []):
                 dt = datetime.strptime(item["played_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+                dt = dt.replace(tzinfo=timezone.utc).astimezone(user_tz)
                 day = dt.weekday()
                 hour = dt.hour
                 grid[(day, hour)] += 1
@@ -629,6 +641,12 @@ def api_listening_streak():
     if not token:
         return jsonify({"error": "not_authenticated"}), 401
 
+    tz_name = request.args.get("tz", "UTC")
+    try:
+        user_tz = ZoneInfo(tz_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
     spotify_user_id = get_or_set_user_id(token)
 
     if DATABASE_URL and spotify_user_id:
@@ -637,11 +655,11 @@ def api_listening_streak():
                 if conn:
                     cur = conn.cursor()
                     cur.execute("""
-                        SELECT DISTINCT played_at::DATE AS play_date
+                        SELECT DISTINCT (played_at AT TIME ZONE %s)::DATE AS play_date
                         FROM play_history
                         WHERE spotify_user_id = %s
                         ORDER BY play_date DESC;
-                    """, (spotify_user_id,))
+                    """, (tz_name, spotify_user_id))
                     days = {row[0] for row in cur.fetchall()}
 
                     cur.execute(
@@ -650,7 +668,7 @@ def api_listening_streak():
                     )
                     total_plays = cur.fetchone()[0]
 
-            today = datetime.utcnow().date()
+            today = datetime.now(user_tz).date()
             streak = 0
             check = today
             while check in days:
@@ -673,8 +691,9 @@ def api_listening_streak():
     days = set()
     for item in data.get("items", []):
         dt = datetime.strptime(item["played_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        dt = dt.replace(tzinfo=timezone.utc).astimezone(user_tz)
         days.add(dt.date())
-    today = datetime.utcnow().date()
+    today = datetime.now(user_tz).date()
     streak = 0
     check = today
     while check in days:

@@ -86,15 +86,18 @@ async function loadTab(tab){
 }
 
 /* ── Overview ─────────────────────────────────────────────────────── */
+const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 async function initDashboard(){
   showLoader(true);
   loaded.overview = true;
   try {
+    const tz = encodeURIComponent(USER_TZ);
     const [profile, streak, recent, heatmap, genres] = await Promise.all([
       api('/api/profile'),
-      api('/api/listening_streak'),
+      api(`/api/listening_streak?tz=${tz}`),
       api('/api/recent_timeline'),
-      api('/api/weekly_heatmap'),
+      api(`/api/weekly_heatmap?tz=${tz}`),
       api('/api/genre_breakdown'),
     ]);
 
@@ -262,7 +265,7 @@ function buildMoodChart(canvasId, scatter){
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 async function loadHeatmap(){
-  const data = await api('/api/weekly_heatmap');
+  const data = await api(`/api/weekly_heatmap?tz=${encodeURIComponent(USER_TZ)}`);
 
   // Hour labels
   $('#heatmap-x-labels').innerHTML = Array.from({length:24},(_,h) =>
@@ -504,14 +507,18 @@ async function loadTimeline(){
   const tl = $('#timeline');
   let lastDate = null;
   tl.innerHTML = items.map(item => {
+    const dt = new Date(item.played_at);
+    const weekday = dt.toLocaleDateString(undefined, {weekday:'short'});
+    const date = dt.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+    const time = dt.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit', hour12:false});
     let dayHeader = '';
-    const dateLabel = `${item.weekday}, ${item.date}`;
+    const dateLabel = `${weekday}, ${date}`;
     if(dateLabel !== lastDate){
       lastDate = dateLabel;
       dayHeader = `<div class="tl-day">${esc(dateLabel)}</div>`;
     }
     return `${dayHeader}<div class="tl-item">
-      <span class="tl-time">${esc(item.time)}</span>
+      <span class="tl-time">${esc(time)}</span>
       <div class="tl-dot"></div>
       ${item.image?`<img class="tl-img" src="${esc(item.image)}" alt="" loading="lazy"/>`:'<div class="tl-img"></div>'}
       <div class="tl-info">
