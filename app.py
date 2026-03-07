@@ -873,6 +873,100 @@ def api_admin_users():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/admin/stats/<spotify_id>")
+def api_admin_stats(spotify_id):
+    """Full stats for any user: streak, top tracks, top artists, genres. Admin only."""
+    if not is_admin():
+        return jsonify({"error": "forbidden"}), 403
+    if not DATABASE_URL:
+        return jsonify({"error": "no_database"}), 400
+
+    tz_name = request.args.get("tz", "UTC")
+    try:
+        user_tz = ZoneInfo(tz_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
+    result = {"spotify_id": spotify_id}
+
+    # ── Streak & play stats from DB ──
+    try:
+        with get_db() as conn:
+            if conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT DISTINCT (played_at AT TIME ZONE %s)::DATE AS play_date
+                    FROM play_history WHERE spotify_user_id = %s
+                    ORDER BY play_date DESC;
+                """, (tz_name, spotify_id))
+                days = {row[0] for row in cur.fetchall()}
+                cur.execute("SELECT COUNT(*) FROM play_history WHERE spotify_user_id = %s", (spotify_id,))
+                total_plays = cur.fetchone()[0]
+
+                today = datetime.now(user_tz).date()
+                streak = 0
+                check = today
+                while check in days:
+                    streak += 1
+                    check -= timedelta(days=1)
+
+                result["streak"] = {"streak": streak, "active_days": len(days), "total_plays": total_plays}
+    except Exception as e:
+        result["streak"] = {"streak": 0, "active_days": 0, "total_plays": 0}
+
+    # ── Get user's access token via stored refresh token ──
+    user_token = None
+    try:
+        with get_db() as conn:
+            if conn:
+                cur = conn.cursor()
+                cur.execute("SELECT refresh_token FROM users WHERE spotify_id = %s", (spotify_id,))
+                row = cur.fetchone()
+                if row:
+                    user_token, _ = _refresh_token_for_user(row[0])
+    except Exception:
+        pass
+
+    # ── Spotify API stats (need user's token) ──
+    if user_token:
+        try:
+            top_tracks_data = spotify_get("/me/top/tracks", user_token, params={"limit": 10, "time_range": "short_term"})
+            result["top_tracks"] = [{
+                "name": t["name"],
+                "artist": ", ".join(a["name"] for a in t["artists"]),
+                "image": t["album"]["images"][0]["url"] if t["album"]["images"] else None,
+            } for t in top_tracks_data.get("items", [])]
+        except Exception:
+            result["top_tracks"] = []
+
+        try:
+            top_artists_data = spotify_get("/me/top/artists", user_token, params={"limit": 10, "time_range": "short_term"})
+            result["top_artists"] = [{
+                "name": a["name"],
+                "genres": a["genres"][:3],
+                "image": a["images"][0]["url"] if a["images"] else None,
+            } for a in top_artists_data.get("items", [])]
+        except Exception:
+            result["top_artists"] = []
+
+        try:
+            genre_data = spotify_get("/me/top/artists", user_token, params={"limit": 20, "time_range": "short_term"})
+            genre_count = defaultdict(int)
+            for artist in genre_data.get("items", []):
+                for g in artist["genres"]:
+                    genre_count[g] += 1
+            sorted_genres = sorted(genre_count.items(), key=lambda x: x[1], reverse=True)
+            result["genres"] = [{"genre": g, "count": c} for g, c in sorted_genres[:10]]
+        except Exception:
+            result["genres"] = []
+    else:
+        result["top_tracks"] = []
+        result["top_artists"] = []
+        result["genres"] = []
+
+    return jsonify(result)
+
+
 @app.route("/api/admin/heatmap/<spotify_id>")
 def api_admin_heatmap(spotify_id):
     """View any user's heatmap. Admin only."""

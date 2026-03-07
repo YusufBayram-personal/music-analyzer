@@ -548,69 +548,117 @@ async function loadAdmin(){
         <strong>${esc(u.display_name || u.spotify_id)}</strong>
         <span class="admin-user-meta">${esc(u.spotify_id)} · ${u.play_count} plays · joined ${date}</span>
       </div>
-      <button class="btn-sm" data-uid="${esc(u.spotify_id)}" data-name="${esc(u.display_name || u.spotify_id)}">View Heatmap</button>
+      <button class="btn-sm" data-uid="${esc(u.spotify_id)}" data-name="${esc(u.display_name || u.spotify_id)}">View Stats</button>
     </div>`;
   }).join('');
 
   container.querySelectorAll('.btn-sm').forEach(btn => {
-    btn.addEventListener('click', () => loadAdminHeatmap(btn.dataset.uid, btn.dataset.name));
+    btn.addEventListener('click', () => loadAdminUserDetail(btn.dataset.uid, btn.dataset.name));
+  });
+
+  $('#admin-back-btn').addEventListener('click', () => {
+    $('#admin-detail').classList.add('hidden');
+    container.parentElement.classList.remove('hidden');
   });
 }
 
-async function loadAdminHeatmap(uid, name){
+async function loadAdminUserDetail(uid, name){
   showLoader(true);
+  $('#admin-users').parentElement.classList.add('hidden');
+  const detail = $('#admin-detail');
+  detail.classList.remove('hidden');
+  $('#admin-detail-title').textContent = name;
+
   try {
-    const data = await api(`/api/admin/heatmap/${uid}?tz=${encodeURIComponent(USER_TZ)}`);
-    const card = $('#admin-heatmap-card');
-    card.classList.remove('hidden');
-    $('#admin-heatmap-title').textContent = `${name}'s Heatmap`;
+    const tz = encodeURIComponent(USER_TZ);
+    const [stats, heatmap] = await Promise.all([
+      api(`/api/admin/stats/${uid}?tz=${tz}`),
+      api(`/api/admin/heatmap/${uid}?tz=${tz}`),
+    ]);
 
-    // X labels
-    $('#admin-heatmap-x').innerHTML = Array.from({length:24},(_,h) =>
-      `<span>${h%6===0?h:''}</span>`).join('');
+    // Streak stats
+    const s = stats.streak || {};
+    $('#admin-stats').innerHTML = `
+      <div class="stat-card"><div class="stat-icon">🔥</div><div class="stat-value">${s.streak||0}</div><div class="stat-label">Day Streak</div></div>
+      <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-value">${s.active_days||0}</div><div class="stat-label">Active Days</div></div>
+      <div class="stat-card"><div class="stat-icon">🎵</div><div class="stat-value">${s.total_plays||0}</div><div class="stat-label">Total Plays</div></div>
+    `;
 
-    // Y labels
-    $('#admin-heatmap-y').innerHTML = DAYS.map(d => `<span>${d}</span>`).join('');
+    // Top tracks
+    const tracks = stats.top_tracks || [];
+    $('#admin-tracks').innerHTML = tracks.length ? tracks.map((t,i) => `
+      <div class="admin-item">
+        <span class="admin-rank">${i+1}</span>
+        ${t.image?`<img class="admin-item-img" src="${esc(t.image)}" alt=""/>`:''}
+        <div><strong>${esc(t.name)}</strong><br><span class="admin-user-meta">${esc(t.artist)}</span></div>
+      </div>
+    `).join('') : '<p style="color:var(--dim);padding:12px">No data (user may not be a Spotify tester)</p>';
 
-    const grid = $('#admin-heatmap-grid');
-    grid.innerHTML = '';
-    const map = {};
-    let maxC = 1;
-    data.forEach(({day,hour,count,tracks}) => {
-      map[`${day}-${hour}`] = {count,tracks};
-      if(count > maxC) maxC = count;
-    });
+    // Top artists
+    const artists = stats.top_artists || [];
+    $('#admin-artists').innerHTML = artists.length ? artists.map((a,i) => `
+      <div class="admin-item">
+        <span class="admin-rank">${i+1}</span>
+        ${a.image?`<img class="admin-item-img" src="${esc(a.image)}" alt="" style="border-radius:50%"/>`:''}
+        <div><strong>${esc(a.name)}</strong><br><span class="admin-user-meta">${(a.genres||[]).join(', ')}</span></div>
+      </div>
+    `).join('') : '<p style="color:var(--dim);padding:12px">No data</p>';
 
-    const tip = $('#hm-tooltip');
-    for(let day=0; day<7; day++){
-      for(let hour=0; hour<24; hour++){
-        const entry = map[`${day}-${hour}`];
-        const count = entry?.count || 0;
-        const ratio = count/maxC;
-        const size  = count>0 ? Math.max(8, Math.round(ratio*22)) : 4;
-        const op    = count>0 ? 0.2 + ratio*0.8 : 0.07;
+    // Genres
+    const genres = stats.genres || [];
+    $('#admin-genres').innerHTML = genres.length ? genres.map(g =>
+      `<span class="genre-pill">${esc(g.genre)} <strong>${g.count}</strong></span>`
+    ).join(' ') : '<p style="color:var(--dim);padding:12px">No data</p>';
 
-        const cell = document.createElement('div');
-        cell.className = 'hm-cell';
-        const dot = document.createElement('div');
-        dot.className = 'hm-dot';
-        dot.style.cssText = `width:${size}px;height:${size}px;opacity:${op.toFixed(2)};${count>0&&ratio>.6?`box-shadow:0 0 ${Math.round(ratio*12)}px rgba(29,185,84,.6);`:''}`;
-        cell.appendChild(dot);
+    // Heatmap
+    renderAdminHeatmap(heatmap);
 
-        if(count>0){
-          cell.addEventListener('mousemove', e => {
-            tip.innerHTML = `<strong>${DAYS[day]} ${String(hour).padStart(2,'0')}:00</strong><br>${count} play${count>1?'s':''}<br><em style="color:#6b6b8a">${(entry.tracks||[]).join(', ')}</em>`;
-            tip.classList.add('show');
-            tip.style.left = `${e.clientX+14}px`;
-            tip.style.top  = `${e.clientY+14}px`;
-          });
-          cell.addEventListener('mouseleave', () => tip.classList.remove('show'));
-        }
-        grid.appendChild(cell);
-      }
-    }
   } catch(e){ console.error(e); }
   showLoader(false);
+}
+
+function renderAdminHeatmap(data){
+  $('#admin-heatmap-x').innerHTML = Array.from({length:24},(_,h) =>
+    `<span>${h%6===0?h:''}</span>`).join('');
+  $('#admin-heatmap-y').innerHTML = DAYS.map(d => `<span>${d}</span>`).join('');
+
+  const grid = $('#admin-heatmap-grid');
+  grid.innerHTML = '';
+  const map = {};
+  let maxC = 1;
+  data.forEach(({day,hour,count,tracks}) => {
+    map[`${day}-${hour}`] = {count,tracks};
+    if(count > maxC) maxC = count;
+  });
+
+  const tip = $('#hm-tooltip');
+  for(let day=0; day<7; day++){
+    for(let hour=0; hour<24; hour++){
+      const entry = map[`${day}-${hour}`];
+      const count = entry?.count || 0;
+      const ratio = count/maxC;
+      const size  = count>0 ? Math.max(8, Math.round(ratio*22)) : 4;
+      const op    = count>0 ? 0.2 + ratio*0.8 : 0.07;
+
+      const cell = document.createElement('div');
+      cell.className = 'hm-cell';
+      const dot = document.createElement('div');
+      dot.className = 'hm-dot';
+      dot.style.cssText = `width:${size}px;height:${size}px;opacity:${op.toFixed(2)};${count>0&&ratio>.6?`box-shadow:0 0 ${Math.round(ratio*12)}px rgba(29,185,84,.6);`:''}`;
+      cell.appendChild(dot);
+
+      if(count>0){
+        cell.addEventListener('mousemove', e => {
+          tip.innerHTML = `<strong>${DAYS[day]} ${String(hour).padStart(2,'0')}:00</strong><br>${count} play${count>1?'s':''}<br><em style="color:#6b6b8a">${(entry.tracks||[]).join(', ')}</em>`;
+          tip.classList.add('show');
+          tip.style.left = `${e.clientX+14}px`;
+          tip.style.top  = `${e.clientY+14}px`;
+        });
+        cell.addEventListener('mouseleave', () => tip.classList.remove('show'));
+      }
+      grid.appendChild(cell);
+    }
+  }
 }
 
 /* ── Sync button ──────────────────────────────────────────────────── */

@@ -258,13 +258,29 @@
       <div class="card-title-row"><h2>Users</h2><span class="badge" id="admin-user-count">0</span></div>
       <div class="admin-users" id="admin-users"></div>
     </div>
-    <div class="glass-card full hidden" id="admin-heatmap-card">
-      <div class="card-title-row"><h2 id="admin-heatmap-title">Heatmap</h2></div>
-      <div class="heatmap-wrap">
-        <div class="heatmap-y-labels" id="admin-heatmap-y"></div>
-        <div>
-          <div class="heatmap-grid" id="admin-heatmap-grid"></div>
-          <div class="heatmap-x-labels" id="admin-heatmap-x"></div>
+    <div class="hidden" id="admin-detail">
+      <div class="card-title-row" style="margin:20px 0 12px"><h2 id="admin-detail-title">User Stats</h2><button class="btn-sm" id="admin-back-btn">Back to list</button></div>
+      <div class="stat-grid" id="admin-stats"></div>
+      <div class="glass-card full" id="admin-tracks-card" style="margin-top:16px">
+        <div class="card-title-row"><h2>Top Tracks</h2></div>
+        <div id="admin-tracks"></div>
+      </div>
+      <div class="glass-card full" style="margin-top:16px">
+        <div class="card-title-row"><h2>Top Artists</h2></div>
+        <div id="admin-artists"></div>
+      </div>
+      <div class="glass-card full" style="margin-top:16px">
+        <div class="card-title-row"><h2>Top Genres</h2></div>
+        <div id="admin-genres"></div>
+      </div>
+      <div class="glass-card full" style="margin-top:16px">
+        <div class="card-title-row"><h2>Heatmap</h2></div>
+        <div class="heatmap-wrap">
+          <div class="heatmap-y-labels" id="admin-heatmap-y"></div>
+          <div>
+            <div class="heatmap-grid" id="admin-heatmap-grid"></div>
+            <div class="heatmap-x-labels" id="admin-heatmap-x"></div>
+          </div>
         </div>
       </div>
     </div>

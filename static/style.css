@@ -203,6 +203,12 @@ canvas { position: relative; z-index: 1; }
 .btn-sm { background:var(--accent); color:#000; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; transition:opacity .2s; }
 .btn-sm:hover { opacity:.85; }
 #admin-tab { color:var(--accent); font-weight:600; }
+.admin-item { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--border); }
+.admin-item:last-child { border-bottom:none; }
+.admin-item-img { width:40px; height:40px; border-radius:6px; object-fit:cover; }
+.admin-rank { color:var(--dim); font-size:13px; font-weight:700; min-width:20px; text-align:center; }
+.genre-pill { display:inline-block; background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:4px 12px; margin:4px; font-size:12px; color:var(--dim); }
+.genre-pill strong { color:var(--accent); margin-left:4px; }
 
 /* ── Scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
