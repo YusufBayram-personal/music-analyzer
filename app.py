@@ -58,7 +58,11 @@ def get_db():
 def init_db():
     """Create tables if they don't exist. Idempotent — safe to call every startup."""
     if not DATABASE_URL:
-        print("WARNING: DATABASE_URL not set — persistence disabled.")
+        print("=" * 60)
+        print("WARNING: DATABASE_URL is not set.")
+        print("Other users will NOT be saved and sync will fail.")
+        print("Set DATABASE_URL in your environment or .env file.")
+        print("=" * 60)
         return
     try:
         with get_db() as conn:
@@ -199,7 +203,8 @@ def get_or_set_user_id(token):
         profile = spotify_get("/me", token)
         uid = profile["id"]
         session["spotify_user_id"] = uid
-    except Exception:
+    except Exception as e:
+        print(f"get_or_set_user_id failed: {e}")
         uid = None
     return uid
 
@@ -268,6 +273,9 @@ def debug():
         "REDIRECT_URI": REDIRECT_URI,
         "CLIENT_ID": CLIENT_ID[:8] + "..." if CLIENT_ID else "MISSING",
         "DATABASE_URL": "configured" if DATABASE_URL else "NOT SET",
+        "session_user_id": session.get("spotify_user_id", "NOT SET"),
+        "has_token": bool(session.get("access_token")),
+        "has_refresh": bool(session.get("refresh_token")),
     })
 
 
@@ -275,7 +283,7 @@ def debug():
 def index():
     # Fast path: session is valid
     if "access_token" in session:
-        return render_template("index.html", logged_in=True)
+        return render_template("index.html", logged_in=True, db_configured=bool(DATABASE_URL))
 
     # Slow path: try to restore session from DB using the long-lived ma_uid cookie
     if DATABASE_URL:
@@ -314,7 +322,7 @@ def index():
             except Exception as e:
                 print(f"Auto-restore failed (non-fatal): {e}")
 
-    return render_template("index.html", logged_in=False)
+    return render_template("index.html", logged_in=False, db_configured=bool(DATABASE_URL))
 
 
 @app.route("/login")
@@ -351,21 +359,25 @@ def callback():
     session["refresh_token"] = refresh_token
     session["token_expiry"] = time.time() + data.get("expires_in", 3600)
 
-    # Persist user + initial play history
+    # Fetch Spotify profile — always do this (sets session user ID)
     spotify_id = None
     try:
         profile = spotify_get("/me", access_token)
         spotify_id = profile["id"]
         display_name = profile.get("display_name") or spotify_id
         session["spotify_user_id"] = spotify_id
+    except Exception as e:
+        print(f"WARNING: /me call failed for user: {e}")
 
-        if DATABASE_URL:
+    # Persist user + initial play history (only if we got the user ID)
+    if spotify_id and DATABASE_URL:
+        try:
             with get_db() as conn:
                 if conn:
                     upsert_user(conn, spotify_id, display_name, refresh_token)
             sync_recent_tracks(spotify_id, access_token)
-    except Exception as e:
-        print(f"DB upsert failed (non-fatal): {e}")
+        except Exception as e:
+            print(f"DB upsert failed (non-fatal): {e}")
 
     response = make_response(redirect("/"))
     if spotify_id:
@@ -404,16 +416,26 @@ def api_recent():
 
 @app.route("/api/sync")
 def api_sync():
-    """Manual sync: fetch last 50 plays from Spotify and save new ones to DB."""
+    """Manual sync: fetch recent plays from Spotify and save new ones to DB."""
     token = get_valid_token()
     if not token:
-        return jsonify({"error": "not_authenticated", "msg": "Please log in again"}), 401
+        return jsonify({"error": "not_authenticated", "msg": "Please log out and log in again"}), 401
 
-    spotify_user_id = get_or_set_user_id(token)
-    if not spotify_user_id or not DATABASE_URL:
-        return jsonify({"error": "persistence_not_configured", "msg": "Database not configured"}), 400
+    if not DATABASE_URL:
+        return jsonify({"error": "no_database", "msg": "Database not configured on server"}), 400
 
-    # Ensure user row exists (handles case where callback didn't save them)
+    # Get or fetch the Spotify user ID
+    spotify_user_id = session.get("spotify_user_id")
+    if not spotify_user_id:
+        # Try to fetch it from Spotify directly
+        try:
+            profile = spotify_get("/me", token)
+            spotify_user_id = profile["id"]
+            session["spotify_user_id"] = spotify_user_id
+        except Exception as e:
+            return jsonify({"error": "spotify_api", "msg": f"Spotify API error: {e}"}), 502
+
+    # Ensure user row exists in DB (handles first-time users and users missed by callback)
     try:
         profile = spotify_get("/me", token)
         display_name = profile.get("display_name") or spotify_user_id

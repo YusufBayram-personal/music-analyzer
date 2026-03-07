@@ -54,8 +54,13 @@
     </nav>
     <div class="header-right">
       <div class="sync-wrap">
+        {% if db_configured %}
         <button id="sync-btn" class="btn-sync" title="Sync your play history to the database">⟳ Sync</button>
         <span id="sync-status" class="sync-status"></span>
+        {% else %}
+        <button class="btn-sync" disabled title="Database not configured — set DATABASE_URL on the server">⟳ Sync</button>
+        <span class="sync-status" style="color:#e05c5c">DB not configured</span>
+        {% endif %}
       </div>
       <div id="profile-chip" class="profile-chip hidden">
         <img id="avatar" src="" alt="" />
