@@ -58,6 +58,14 @@ def get_valid_token():
 
 # ── Routes ──────────────────────────────────────────────────────────────────
 
+@app.route("/debug")
+def debug():
+    return jsonify({
+        "REDIRECT_URI": REDIRECT_URI,
+        "CLIENT_ID": CLIENT_ID[:8] + "..." if CLIENT_ID else "MISSING",
+    })
+
+
 @app.route("/")
 def index():
     if "access_token" not in session:
