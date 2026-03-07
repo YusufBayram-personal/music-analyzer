@@ -11,6 +11,8 @@ import psycopg2
 import psycopg2.extras
 from flask import Flask, redirect, request, session, jsonify, render_template, make_response
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 load_dotenv()
 
@@ -740,6 +742,86 @@ def api_decade_breakdown():
             decades[decade] += 1
     sorted_d = sorted(decades.items())
     return jsonify([{"decade": f"{d}s", "count": c} for d, c in sorted_d])
+
+
+# ── Background sync (APScheduler) ─────────────────────────────────────────────
+
+def _refresh_token_for_user(refresh_token):
+    """Exchange a refresh_token for a fresh access_token (no Flask session needed)."""
+    resp = requests.post(TOKEN_URL, data={
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+    })
+    data = resp.json()
+    if "access_token" not in data:
+        return None, None
+    new_refresh = data.get("refresh_token")  # Spotify may rotate it
+    return data["access_token"], new_refresh
+
+
+def background_sync_all_users():
+    """Runs periodically: loops through every user in the DB, refreshes their
+    token, and syncs their last 50 plays. No Flask session required."""
+    if not DATABASE_URL:
+        return
+    try:
+        with get_db() as conn:
+            if not conn:
+                return
+            cur = conn.cursor()
+            cur.execute("SELECT spotify_id, refresh_token FROM users;")
+            users = cur.fetchall()
+    except Exception as e:
+        print(f"[BG-SYNC] Failed to fetch users: {e}")
+        return
+
+    print(f"[BG-SYNC] Starting sync for {len(users)} user(s)…")
+    for spotify_id, stored_refresh in users:
+        try:
+            access_token, new_refresh = _refresh_token_for_user(stored_refresh)
+            if not access_token:
+                print(f"[BG-SYNC] Token refresh failed for {spotify_id}, skipping")
+                continue
+
+            # Update refresh_token in DB if Spotify rotated it
+            if new_refresh and new_refresh != stored_refresh:
+                try:
+                    with get_db() as conn:
+                        if conn:
+                            cur = conn.cursor()
+                            cur.execute(
+                                "UPDATE users SET refresh_token = %s, updated_at = NOW() WHERE spotify_id = %s",
+                                (new_refresh, spotify_id)
+                            )
+                except Exception:
+                    pass
+
+            count = sync_recent_tracks(spotify_id, access_token)
+            print(f"[BG-SYNC] {spotify_id}: +{count} new tracks")
+
+        except Exception as e:
+            print(f"[BG-SYNC] Error syncing {spotify_id}: {e}")
+
+    print("[BG-SYNC] Done.")
+
+
+# Start the scheduler (runs every 2 hours)
+SYNC_INTERVAL_HOURS = int(os.getenv("SYNC_INTERVAL_HOURS", "2"))
+
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(
+    background_sync_all_users,
+    trigger="interval",
+    hours=SYNC_INTERVAL_HOURS,
+    id="bg_sync",
+    replace_existing=True,
+    max_instances=1,
+)
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown(wait=False))
+print(f"[BG-SYNC] Scheduler started — syncing every {SYNC_INTERVAL_HOURS}h")
 
 
 if __name__ == "__main__":
