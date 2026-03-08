@@ -36,13 +36,23 @@ function deprecatedNotice(containerId){
 }
 
 /* ── Animated counter ─────────────────────────────────────────────── */
-function animCount(el, target, duration = 700){
+function animCount(el, target, duration = 900){
   const start = Date.now();
+  const fmt = n => n.toLocaleString();
+  const ease = t => {
+    if(t === 0 || t === 1) return t;
+    return Math.pow(2, -10*t) * Math.sin((t - 0.075) * (2*Math.PI) / 0.3) + 1;
+  };
   const tick = () => {
     const p = Math.min((Date.now()-start)/duration, 1);
-    const val = Math.round(p * p * target);   // ease-in quad
-    el.textContent = val;
-    if(p < 1) requestAnimationFrame(tick);
+    el.textContent = fmt(Math.round(ease(p) * target));
+    if(p < 1){
+      requestAnimationFrame(tick);
+    } else {
+      el.textContent = fmt(target);
+      el.style.transform = 'scale(1.1)';
+      setTimeout(() => { el.style.transform = 'scale(1)'; }, 200);
+    }
   };
   tick();
 }
@@ -52,9 +62,43 @@ Chart.defaults.color = '#6b6b8a';
 Chart.defaults.borderColor = 'rgba(255,255,255,.06)';
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
 
+/* ── Custom Chart.js Tooltips ────────────────────────────────────── */
+Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(14,14,26,.92)';
+Chart.defaults.plugins.tooltip.borderColor = 'rgba(255,255,255,.1)';
+Chart.defaults.plugins.tooltip.borderWidth = 1;
+Chart.defaults.plugins.tooltip.cornerRadius = 10;
+Chart.defaults.plugins.tooltip.titleFont = { size: 13, weight: '700', family: "'Segoe UI', system-ui, sans-serif" };
+Chart.defaults.plugins.tooltip.bodyFont = { size: 12, family: "'Segoe UI', system-ui, sans-serif" };
+Chart.defaults.plugins.tooltip.titleColor = '#eeeef5';
+Chart.defaults.plugins.tooltip.bodyColor = '#a0a0b8';
+Chart.defaults.plugins.tooltip.padding = { top: 10, bottom: 10, left: 14, right: 14 };
+Chart.defaults.plugins.tooltip.boxPadding = 4;
+Chart.defaults.plugins.tooltip.caretSize = 6;
+
 const PALETTE = ['#1DB954','#1ed760','#169c41','#a8f0c0','#52d68a',
                  '#8b5cf6','#3b82f6','#f59e0b','#ef4444','#ec4899',
                  '#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6'];
+
+/* ── Entrance animation helper ────────────────────────────────────── */
+function animateEntrance(container){
+  const targets = container.querySelectorAll(
+    '.glass-card, .stat-card, .personality-hero, .lp-wrap, .tracks-grid, .artists-grid, .milestones-grid'
+  );
+  targets.forEach((el, i) => {
+    el.classList.remove('card-enter');
+    void el.offsetWidth;
+    el.style.setProperty('--i', i);
+    el.classList.add('card-enter');
+  });
+}
+
+/* ── Tab indicator ───────────────────────────────────────────────── */
+function moveTabIndicator(btn){
+  const indicator = $('#tab-indicator');
+  if(!indicator || !btn) return;
+  indicator.style.left = btn.offsetLeft + 'px';
+  indicator.style.width = btn.offsetWidth + 'px';
+}
 
 /* ── Tab routing ──────────────────────────────────────────────────── */
 const loaded = {};
@@ -64,7 +108,10 @@ $$('.tab').forEach(btn => {
     $$('.tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     $$('.tab-content').forEach(s => s.classList.add('hidden'));
-    $(`#tab-${tab}`).classList.remove('hidden');
+    const section = $(`#tab-${tab}`);
+    section.classList.remove('hidden');
+    moveTabIndicator(btn);
+    animateEntrance(section);
     if(!loaded[tab]){ loaded[tab]=true; loadTab(tab); }
   });
 });
@@ -131,6 +178,10 @@ async function initDashboard(){
 
     // Load listening personality (non-blocking)
     api(`/api/listening_personality?tz=${tz}`).then(buildListeningPersonality).catch(()=>{});
+
+    // Entrance animation + tab indicator
+    animateEntrance($('#tab-overview'));
+    moveTabIndicator($('.tab.active'));
   } catch(e){ console.error(e); }
   showLoader(false);
 }
@@ -1109,6 +1160,19 @@ function renderAdminHeatmap(data){
     }
   });
 })();
+
+/* ── Button ripple effect ─────────────────────────────────────────── */
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.btn-sm, .btn-sync, .time-btn');
+  if(!btn) return;
+  const ripple = document.createElement('span');
+  ripple.className = 'ripple-effect';
+  const rect = btn.getBoundingClientRect();
+  ripple.style.left = (e.clientX - rect.left - 10) + 'px';
+  ripple.style.top = (e.clientY - rect.top - 10) + 'px';
+  btn.appendChild(ripple);
+  ripple.addEventListener('animationend', () => ripple.remove());
+});
 
 /* ── Init ─────────────────────────────────────────────────────────── */
 initDashboard();
